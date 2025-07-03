@@ -12,6 +12,7 @@ from src.data_connection import (
 )
 from src.tables.trans_table import get_income
 from src.barcode_generator import generate_pdf
+from src.anonymized_data.ranks import Ranks
 
 import base64
 import io
@@ -236,11 +237,8 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
 )
 def download_file(n_clicks):
     try:
-        # Simulate a possible error (replace this with real logic)
-        if n_clicks % 2 == 0:
-            raise ValueError("Simulated error occurred " + str(n_clicks))
-
-        df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+        ranks = Ranks()
+        df = ranks.table
         return dcc.send_data_frame(df.to_csv, "data.csv"), "", False
 
     except Exception as e:
