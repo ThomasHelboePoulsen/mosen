@@ -227,6 +227,25 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
     else:
         return no_update, no_update
 
+@callback(
+    Output("anonymized_data_download", "data"),
+    Output("failed_anonymized_data_export", "children"),
+    Output("failed_anonymized_data_export", "is_open"),
+    Input("export_anonymized_data_btn", "n_clicks"),
+    prevent_initial_call=True
+)
+def download_file(n_clicks):
+    try:
+        # Simulate a possible error (replace this with real logic)
+        if n_clicks % 2 == 0:
+            raise ValueError("Simulated error occurred " + str(n_clicks))
+
+        df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+        return dcc.send_data_frame(df.to_csv, "data.csv"), "", False
+
+    except Exception as e:
+        return None, f"❌ {str(e)}", True
+
 
 @callback(
     Output("export_barcodes_modal", "is_open"),
