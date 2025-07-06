@@ -1,4 +1,3 @@
-import pandas as pd
 from src.data_connection import get_query
 
 class Ranks:
@@ -11,7 +10,11 @@ class Ranks:
                 FROM users
                 GROUP BY rank
         """
-        self.table = get_query(query,columns)
+        df = get_query(query,columns)
+        df["is_included"] = df["is_included"].astype(bool)
+        self.table = df
+        self.included_ranks = df[df["is_included"]]["ranks"].tolist()
+        self.excluded_ranks = df[~df["is_included"]]["ranks"].tolist()
         print(self.table)
 
 
