@@ -13,6 +13,7 @@ from src.data_connection import (
 from src.tables.trans_table import get_income
 from src.barcode_generator import generate_pdf
 from src.anonymized_data.ranks import Ranks
+from src.anonymized_data.AnonymizedExportManager import AnonymizedExportManager
 
 import base64
 import io
@@ -237,11 +238,11 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
 )
 def download_file(n_clicks):
     try:
-        ranks = Ranks()
-        df = ranks.table
-        return dcc.send_data_frame(df.to_csv, "data.csv"), "", False
-
+        anonymizedExportManager = AnonymizedExportManager()
+        zip_buffer = anonymizedExportManager.data_to_zip_buffer()
+        return dcc.send_bytes(zip_buffer.read(), "tables.zip"),"", False
     except Exception as e:
+        print(e)
         return None, f"❌ {str(e)}", True
 
 
