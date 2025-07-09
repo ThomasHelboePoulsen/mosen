@@ -2,18 +2,21 @@ import zipfile
 import io
 from src.anonymized_data.ranks import Ranks
 from src.anonymized_data.transactions import Transactions
+from src.data_connection import get_prods
 
 
 class AnonymizedExportManager():
     def __init__(self):
         self.data = {}
-        self.anonymize_data()
+        self.update()
 
-    def anonymize_data(self):
+    def update(self):
+        data = {}
         ranks = Ranks()
-        self.data["ranks"] = ranks.table
-        self.data["transactions"] = Transactions(ranks).table
-        pass
+        data["ranks"] = ranks.table
+        data["transactions"] = Transactions(ranks).table
+        data["items"] = get_prods()
+        self.data = data
 
     def data_to_zip_buffer(self):
         zip_buffer = io.BytesIO()
