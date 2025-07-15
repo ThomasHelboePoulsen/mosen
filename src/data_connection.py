@@ -8,33 +8,37 @@ import keyboard as k
 
 from src.tables.create_tables import table_defs
 
+class Database():
+    def __init__(self,data_file="beerbase.db"):
+        self.data_file = data_file
 
-def init():
-    data_file = "beerbase.db"
-    if not os.path.exists(data_file):
-        open(data_file, "w")
+    def init(self):
+        if not os.path.exists(self.data_file):
+            open(self.data_file, "w")
 
-    con = sqlite3.connect(data_file)
-    cur = con.cursor()
+        con = sqlite3.connect(self.data_file)
+        cur = con.cursor()
 
-    sql_query = """SELECT name FROM sqlite_master 
-                                    WHERE type='table';"""
-    cur.execute(sql_query)
-    extraction = lambda x: str(x[0])
-    tables = list(map(extraction, cur.fetchall()))
-    defs = table_defs()
-    for table in defs.keys():
-        if table in tables:
-            continue
-        cur.execute(defs[table])
-        con.commit()
-    return con, cur
+        sql_query = """SELECT name FROM sqlite_master
+                                        WHERE type='table';"""
+        cur.execute(sql_query)
+        extraction = lambda x: str(x[0])
+        tables = list(map(extraction, cur.fetchall()))
+        defs = table_defs()
+        for table in defs.keys():
+            if table in tables:
+                continue
+            cur.execute(defs[table])
+            con.commit()
+        return con, cur
 
-def get_query(query:str,columns:list) -> pd.DataFrame:
-    """run query and return df with columns as strings"""
-    _, cur = init()
-    data = pd.DataFrame(cur.execute(query),columns=columns, dtype=str)
-    return data
+    def get_query(self,query:str,columns:list) -> pd.DataFrame:
+        """run query and return df with columns as strings"""
+        #TODO: do we need to create new connections every time? probably quicker to just use one?
+        _, cur = self.init()
+        data = pd.DataFrame(cur.execute(query),columns=columns, dtype=str)
+        return data
+
 
 def get_prods():
     query = "SELECT * FROM prods"
@@ -46,7 +50,7 @@ def get_prods():
         "current_stock",
         "initial_stock",
     ]
-    return get_query(query,cols)
+    return Database().get_query(query,cols)
 
 
 def get_trans():
@@ -56,23 +60,23 @@ def get_trans():
         "barcode_prod",
         "timestamp",
     ]
-    return get_query(query,cols)
+    return Database().get_query(query,cols)
 
 
 def get_users():
     query = "SELECT * FROM users"
     cols = ["barcode", "name", "rank", "team"]
-    return get_query(query,cols)
+    return Database().get_query(query,cols)
 
 
 def get_current_trans():
     query = "SELECT * FROM temporary"
     cols = ["barcode_prod", "name"]
-    return get_query(query,cols)
+    return Database().get_query(query,cols)
 
 
 def update_current_trans(data: pd.DataFrame):
-    con, cur = init()
+    con, cur = Database().init()
     if len(data.columns == 2):
         data.to_sql(name="temporary", con=con, if_exists="replace", index=False)
         con.commit()
@@ -81,7 +85,7 @@ def update_current_trans(data: pd.DataFrame):
 
 
 def reset_table(table: str):
-    con, cur = init()
+    con, cur = Database().init()
     cur.execute(f"DELETE FROM {table}")
     print(f"Reset on {table}")
     con.commit()
@@ -95,7 +99,7 @@ def upload_values(data: list, table: str):
     reset_table(table)
     if type(data) == pd.DataFrame:
         data = data.to_dict(orient="records")
-    con, cur = init()
+    con, cur = Database().init()
     n_cols = {"prods": 6, "transactions": 3, "users": 4}
     validation = {
         "prods": validate_prod,
@@ -126,7 +130,7 @@ def upload_values(data: list, table: str):
 
 
 def add_transactions(trans_df):
-    con, cur = init()
+    con, cur = Database().init()
     trans_df.to_sql(name="transactions", con=con, if_exists="append", index=False)
 
 
@@ -195,7 +199,7 @@ def check_db(data, con, cur):
 
 
 def get_password():
-    con, cur = init()
+    con, cur = Database().init()
     data = list(cur.execute("SELECT password FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT password FROM settings"))
@@ -203,7 +207,7 @@ def get_password():
 
 
 def get_backup_time():
-    con, cur = init()
+    con, cur = Database().init()
     data = list(cur.execute("SELECT backup FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT backup FROM settings"))
@@ -211,7 +215,7 @@ def get_backup_time():
 
 
 def get_show_bill():
-    con, cur = init()
+    con, cur = Database().init()
     data = list(cur.execute("SELECT show_bill FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT show_bill FROM settings"))
@@ -219,7 +223,7 @@ def get_show_bill():
 
 
 def get_waste():
-    con, cur = init()
+    con, cur = Database().init()
     data = list(cur.execute("SELECT waste FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT waste FROM settings"))
@@ -227,7 +231,7 @@ def get_waste():
 
 
 def update_values(password=None, show_bill=None, waste=None, backup_time=None):
-    con, cur = init()
+    con, cur = Database().init()
     inps = {
         "password": password,
         "show_bill": show_bill,
@@ -242,10 +246,10 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None):
 
 
 def reset_all_tables():
-    con, cur = init()
+    con, cur = Database().init()
     for table in table_defs().keys():
         cur.execute(f"DROP TABLE {table}")
         con.commit()
-    con, cur = init()
+    con, cur = Database().init()
     k.unhook_all()
     k.send("alt+f4")

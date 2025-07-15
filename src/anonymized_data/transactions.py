@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.data_connection import get_query
+from src.data_connection import Database
 from src.anonymized_data.ranks import Ranks
 
 COLUMNS = ["rank","logical_day","weekday_name","barcode_prod","amount","distinct_users"]
@@ -8,7 +8,7 @@ OUTPUT_COLUMNS = ["rank","logical_day","weekday_name","barcode_prod"]
 
 class Transactions:
     def __init__(self,ranks:Ranks):
-        df = get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,COLUMNS)
+        df = Database().get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,COLUMNS)
         df = df[df['rank'].isin(ranks.included_ranks)]
         df = self.sanitize_rare_combinations(df)
         self.table = df[OUTPUT_COLUMNS]

@@ -1,15 +1,15 @@
 import threading
-from src.data_connection import get_query,get_prods
+from src.data_connection import Database,get_prods
 import plotly.express as px
 
 class TopUserChartData:
     """Class to cache db callsand generate top user charts
-    
+
     (This adds state to a stateless framework, but it works since there is only 1 client)"""
     # region Singleton pattern
     _instance = None
     _lock = threading.Lock()
-    
+
 
     def __new__(cls):
         with cls._lock:
@@ -53,7 +53,7 @@ class TopUserChartData:
         )
         selected_user_products = selected_user_products[selected_user_products['user'].isin(top_x_users)]
         return px.bar(selected_user_products,x="user",y="amount",color="product")
-    
+
     def get_verbose_user_products(self):
         """get user products with all possible combinations listed (ie. all rows with amount = 0 are included)"""
         all_user_products = self.__class__.query_user_products()
@@ -69,7 +69,7 @@ class TopUserChartData:
     # region DB Query Configuration
     __db_query = """
         SELECT users.name AS user,prods.name AS product, COUNT(*) AS amount
-        FROM users 
+        FROM users
             INNER JOIN transactions  ON transactions.barcode_user = users.barcode
             INNER JOIN prods ON transactions.barcode_prod = prods.barcode
         GROUP BY users.name,prods.name
@@ -82,7 +82,7 @@ class TopUserChartData:
     __db_cols = [col for col,_ in __db_dtypes.items()]
     @classmethod
     def query_user_products(cls):
-        user_products = get_query(cls.__db_query,cls.__db_cols)
+        user_products = Database().get_query(cls.__db_query,cls.__db_cols)
         typed_user_products = user_products.astype(cls.__db_dtypes)
         return typed_user_products
     # endregion
