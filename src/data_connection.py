@@ -52,6 +52,40 @@ class Database():
         ]
         return self.get_query(query,cols)
 
+    def upload_values(self,data: list, table: str):
+        reset_table(table)
+        if type(data) == pd.DataFrame:
+            data = data.to_dict(orient="records")
+        con, cur = self.init()
+        n_cols = {"prods": 6, "transactions": 3, "users": 4}
+        validation = {
+            "prods": validate_prod,
+            "transactions": validate_trans,
+            "users": validate_user,
+        }
+
+        bad_rows = list()
+        good_rows = list()
+        for row in data:
+            row, bad = validation[table](row, data)
+            for col, val in row.items():
+                if val is None or str(val).replace(" ", "") == "":
+                    row[col] = "Unkown"
+                    bad = True
+            if bad:
+                bad_rows.append(row)
+            else:
+                good_rows.append(row)
+
+        data = pd.DataFrame(good_rows)
+        if n_cols[table] == len(data.columns):
+            data.to_sql(name=table, con=con, if_exists="replace", index=False)
+            con.commit()
+            return "success", bad_rows
+        else:
+            return table, None
+
+
 
 def get_prods():
     return Database().get_prods()
@@ -99,38 +133,7 @@ def reset_current_trans():
 
 
 def upload_values(data: list, table: str):
-    reset_table(table)
-    if type(data) == pd.DataFrame:
-        data = data.to_dict(orient="records")
-    con, cur = Database().init()
-    n_cols = {"prods": 6, "transactions": 3, "users": 4}
-    validation = {
-        "prods": validate_prod,
-        "transactions": validate_trans,
-        "users": validate_user,
-    }
-
-    bad_rows = list()
-    good_rows = list()
-    for row in data:
-        row, bad = validation[table](row, data)
-        for col, val in row.items():
-            if val is None or str(val).replace(" ", "") == "":
-                row[col] = "Unkown"
-                bad = True
-        if bad:
-            bad_rows.append(row)
-        else:
-            good_rows.append(row)
-
-    data = pd.DataFrame(good_rows)
-    if n_cols[table] == len(data.columns):
-        data.to_sql(name=table, con=con, if_exists="replace", index=False)
-        con.commit()
-        return "success", bad_rows
-    else:
-        return table, None
-
+    return Database().upload_values(data,table)
 
 def add_transactions(trans_df):
     con, cur = Database().init()

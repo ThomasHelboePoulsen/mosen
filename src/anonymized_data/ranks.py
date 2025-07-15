@@ -11,7 +11,7 @@ class Ranks:
                 GROUP BY rank
         """
         df = db.get_query(query,columns)
-        df["is_included"] = df["is_included"].astype(bool)
+        df["is_included"] = df["is_included"].astype(int).astype(bool)
         self.table = df
         self.included_ranks = df[df["is_included"]]["ranks"].tolist()
         self.excluded_ranks = df[~df["is_included"]]["ranks"].tolist()
