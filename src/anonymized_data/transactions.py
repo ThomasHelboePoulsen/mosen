@@ -7,8 +7,8 @@ COLUMNS = ["rank","logical_day","weekday_name","barcode_prod","amount","distinct
 OUTPUT_COLUMNS = ["rank","logical_day","weekday_name","barcode_prod"]
 
 class Transactions:
-    def __init__(self,ranks:Ranks):
-        df = Database().get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,COLUMNS)
+    def __init__(self,db:Database,ranks:Ranks):
+        df = db.get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,COLUMNS)
         df = df[df['rank'].isin(ranks.included_ranks)]
         df = self.sanitize_rare_combinations(df)
         self.table = df[OUTPUT_COLUMNS]

@@ -3,6 +3,8 @@ import io
 from src.anonymized_data.ranks import Ranks
 from src.anonymized_data.transactions import Transactions
 from src.data_connection import get_prods
+from src.data_connection import Database
+
 
 
 class AnonymizedExportManager():
@@ -11,11 +13,12 @@ class AnonymizedExportManager():
         self.update()
 
     def update(self):
+        db = Database()
         data = {}
-        ranks = Ranks()
+        ranks = Ranks(db)
         data["ranks"] = ranks.table
-        data["transactions"] = Transactions(ranks).table
-        data["items"] = get_prods()
+        data["transactions"] = Transactions(db,ranks).table
+        data["items"] = db.get_prods()
         self.data = data
 
     def data_to_zip_buffer(self):

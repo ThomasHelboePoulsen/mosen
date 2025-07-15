@@ -1,7 +1,7 @@
 from src.data_connection import Database
 
 class Ranks:
-    def __init__(self,aggregation_limit=10):
+    def __init__(self,db:Database,aggregation_limit=10):
         columns = ["ranks","user_count","is_included"]
         query = f"""
             SELECT rank AS {columns[0]}
@@ -10,7 +10,7 @@ class Ranks:
                 FROM users
                 GROUP BY rank
         """
-        df = Database().get_query(query,columns)
+        df = db.get_query(query,columns)
         df["is_included"] = df["is_included"].astype(bool)
         self.table = df
         self.included_ranks = df[df["is_included"]]["ranks"].tolist()

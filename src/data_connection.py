@@ -40,18 +40,21 @@ class Database():
         return data
 
 
-def get_prods():
-    query = "SELECT * FROM prods"
-    cols = [
-        "barcode",
-        "name",
-        "price",
-        "category",
-        "current_stock",
-        "initial_stock",
-    ]
-    return Database().get_query(query,cols)
+    def get_prods(self):
+        query = "SELECT * FROM prods"
+        cols = [
+            "barcode",
+            "name",
+            "price",
+            "category",
+            "current_stock",
+            "initial_stock",
+        ]
+        return self.get_query(query,cols)
 
+
+def get_prods():
+    return Database().get_prods()
 
 def get_trans():
     query = "SELECT * FROM transactions"
