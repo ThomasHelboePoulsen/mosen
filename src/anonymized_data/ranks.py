@@ -2,6 +2,7 @@ from src.data_connection import Database
 
 class Ranks:
     def __init__(self,db:Database,aggregation_limit=10):
+        self.aggregation_limit = aggregation_limit
         columns = ["ranks","user_count","is_included"]
         query = f"""
             SELECT rank AS {columns[0]}
