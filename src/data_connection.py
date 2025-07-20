@@ -59,9 +59,9 @@ class Database():
         con, cur = self.init()
         n_cols = {"prods": 6, "transactions": 3, "users": 4}
         validation = {
-            "prods": validate_prod,
-            "transactions": validate_trans,
-            "users": validate_user,
+            "prods": self.validate_prod,
+            "transactions": self.validate_trans,
+            "users": self.validate_user,
         }
 
         bad_rows = list()
@@ -84,6 +84,63 @@ class Database():
             return "success", bad_rows
         else:
             return table, None
+
+
+    def validate_user(self,row: dict, data: list):
+        users = pd.DataFrame(data)
+        bad = False
+        if sum(array(users["barcode"]) == row["barcode"]) > 1:
+            bad = True
+            row["barcode"] = max(users["barcode"]) + 1
+        if len(str(row["barcode"])) < 4 or len(str(row["barcode"])) > 11:
+            bad = True
+            for i in range(1000, 100000000000):
+                if i not in users["barcode"]:
+                    row["barcode"] = i
+                    break
+            return row, bad
+        return row, bad
+
+
+    def validate_prod(self,row: dict, data: list):
+        prods = pd.DataFrame(data)
+        bad = False
+        actual_colums = [
+            "barcode",
+            "name",
+            "price",
+            "category",
+            "current_stock",
+            "initial_stock",
+        ]
+        if set(prods.columns) != set(actual_colums):
+            bad = True
+            print(
+                f"It seems that there is a mismatch in the column names of your file. Make sure that the columns are: \n{actual_colums}"
+            )
+            return row, bad
+        if sum(array(prods["barcode"]) == row["barcode"]) > 1:
+            bad = True
+            row["barcode"] = max(prods["barcode"]) + 1
+        if len(str(row["barcode"])) < 3 or len(str(row["barcode"])) > 3:
+            bad = True
+            for i in range(100, 1000):
+                if i not in prods["barcode"]:
+                    row["barcode"] = i
+                    break
+            return row, bad
+        return row, bad
+
+
+    def validate_trans(self,row: dict, data: list):
+        prods = self.get_prods()
+        if str(row["barcode_prod"]) not in list(prods["barcode"]):
+            print("HUHHH")
+            print(str(row["barcode_prod"]))
+            print(list(prods["barcode"]))
+            return row, True
+        return row, False
+
 
 
 
@@ -138,59 +195,6 @@ def upload_values(data: list, table: str):
 def add_transactions(trans_df):
     con, cur = Database().init()
     trans_df.to_sql(name="transactions", con=con, if_exists="append", index=False)
-
-
-def validate_user(row: dict, data: list):
-    users = pd.DataFrame(data)
-    bad = False
-    if sum(array(users["barcode"]) == row["barcode"]) > 1:
-        bad = True
-        row["barcode"] = max(users["barcode"]) + 1
-    if len(str(row["barcode"])) < 4 or len(str(row["barcode"])) > 11:
-        bad = True
-        for i in range(1000, 100000000000):
-            if i not in users["barcode"]:
-                row["barcode"] = i
-                break
-        return row, bad
-    return row, bad
-
-
-def validate_prod(row: dict, data: list):
-    prods = pd.DataFrame(data)
-    bad = False
-    actual_colums = [
-        "barcode",
-        "name",
-        "price",
-        "category",
-        "current_stock",
-        "initial_stock",
-    ]
-    if set(prods.columns) != set(actual_colums):
-        bad = True
-        print(
-            f"It seems that there is a mismatch in the column names of your file. Make sure that the columns are: \n{actual_colums}"
-        )
-        return row, bad
-    if sum(array(prods["barcode"]) == row["barcode"]) > 1:
-        bad = True
-        row["barcode"] = max(prods["barcode"]) + 1
-    if len(str(row["barcode"])) < 3 or len(str(row["barcode"])) > 3:
-        bad = True
-        for i in range(100, 1000):
-            if i not in prods["barcode"]:
-                row["barcode"] = i
-                break
-        return row, bad
-    return row, bad
-
-
-def validate_trans(row: dict, data: list):
-    prods = get_prods()
-    if str(row["barcode_prod"]) not in list(prods["barcode"]):
-        return row, True
-    return row, False
 
 
 def check_db(data, con, cur):

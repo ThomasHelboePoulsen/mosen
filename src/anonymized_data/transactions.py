@@ -1,17 +1,16 @@
 import pandas as pd
-
+from enum import Enum
 from src.data_connection import Database
 from src.anonymized_data.ranks import Ranks
 
-COLUMNS = ["rank","logical_day","weekday_name","barcode_prod","amount","distinct_users"]
-OUTPUT_COLUMNS = ["rank","logical_day","weekday_name","barcode_prod"]
 
 class Transactions:
     def __init__(self,db:Database,ranks:Ranks):
-        df = db.get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,COLUMNS)
-        df = df[df['rank'].isin(ranks.included_ranks)]
+        df = db.get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,list(Cols))
+        df = df[df[Cols.RANK].isin(ranks.included_ranks)]
         df = self.sanitize_rare_combinations(df)
-        self.table = df[OUTPUT_COLUMNS]
+        output_columns = [Cols.RANK, Cols.LOGICAL_DAY, Cols.WEEKDAY_NAME, Cols.BARCODE_PROD]
+        self.table = df[output_columns]
 
     def sanitize_rare_combinations(self,df):
         minimum_unique_users_per_combination = 2
@@ -50,3 +49,15 @@ SELECT rank,logical_day,weekday_name,barcode_prod,COUNT(*) AS amount, COUNT(DIST
 	LEFT JOIN users ON users.barcode = enriched_transactions.barcode_user
 	GROUP BY rank,logical_day,barcode_prod;
 """
+
+
+class Cols(str, Enum):
+    RANK            = "rank"
+    LOGICAL_DAY     = "logical_day"
+    WEEKDAY_NAME    = "weekday_name"
+    BARCODE_PROD    = "barcode_prod"
+    AMOUNT          = "amount"
+    DISTINCT_USERS  = "distinct_users"
+
+    def __str__(self):
+        return self.value
