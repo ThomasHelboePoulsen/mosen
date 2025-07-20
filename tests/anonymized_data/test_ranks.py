@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 from src.data_connection import Database
-from src.anonymized_data.ranks import Ranks,EXCLUDED_STRING
+from src.anonymized_data.ranks import Ranks,EXCLUDED_STRING,Cols
 
 MINIMUM_USER_BARCODE = 1000
 
@@ -16,7 +16,7 @@ def test_ranks_uniqueness(tmp_path):
     assert len(ranks.included_ranks) > 1
     assert len(ranks.excluded_ranks) > 1
     assert len(set(ranks.included_ranks)) == len(ranks.included_ranks)
-    shown_excluded_ranks = set(ranks.table["ranks"]).difference(set(ranks.included_ranks))
+    shown_excluded_ranks = set(ranks.table[Cols.RANKS]).difference(set(ranks.included_ranks))
     assert len(shown_excluded_ranks) == 1
     assert shown_excluded_ranks.pop() == EXCLUDED_STRING
 
@@ -43,7 +43,7 @@ def test_excluded_rank_names_removed(tmp_path):
     ranks = Ranks(db)
     #Assert
     assert len(ranks.excluded_ranks) > 1
-    excluded_ranks_included = set(ranks.table["ranks"]).intersection(set(ranks.excluded_ranks))
+    excluded_ranks_included = set(ranks.table[Cols.RANKS]).intersection(set(ranks.excluded_ranks))
     assert len(excluded_ranks_included) == 0
 
 def test_total_user_count_consistent(tmp_path):
@@ -55,7 +55,7 @@ def test_total_user_count_consistent(tmp_path):
     ranks = Ranks(db)
     #Assert
     true_user_count = len(users["barcode"])
-    ranks_user_count = ranks.table["user_count"].astype(int).sum()
+    ranks_user_count = ranks.table[Cols.USER_COUNT].sum()
     assert true_user_count == ranks_user_count
 
 def test_included_and_excluded_are_disjoint(tmp_path):
