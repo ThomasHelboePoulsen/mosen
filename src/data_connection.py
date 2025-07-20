@@ -52,6 +52,16 @@ class Database():
         ]
         return self.get_query(query,cols)
 
+
+    def get_trans(self):
+        query = "SELECT * FROM transactions"
+        cols = [
+            "barcode_user",
+            "barcode_prod",
+            "timestamp",
+        ]
+        return self.get_query(query,cols)
+
     def upload_values(self,data: list, table: str):
         reset_table(table)
         if type(data) == pd.DataFrame:
@@ -148,13 +158,7 @@ def get_prods():
     return Database().get_prods()
 
 def get_trans():
-    query = "SELECT * FROM transactions"
-    cols = [
-        "barcode_user",
-        "barcode_prod",
-        "timestamp",
-    ]
-    return Database().get_query(query,cols)
+    return Database().get_trans()
 
 
 def get_users():

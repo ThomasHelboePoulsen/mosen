@@ -1,37 +1,29 @@
 import pytest
 import pandas as pd
 from src.data_connection import Database
-from src.anonymized_data.transactions import Transactions
+from src.anonymized_data.transactions import Transactions,Cols,PRODUCT_SANITIEZED_STR
 from src.anonymized_data.ranks import Ranks
 from datetime import datetime
 
-def test_columns_match_enum(tmp_path):
-    #Arrange
-    #Act
-    #Assert
-    assert True
 
-def test_logical_days(tmp_path):
-    #Arrange
-    #Act
-    #Assert
-    assert True
-
-def test_rare_combinations_masked(tmp_path):
-    #Arrange
-    #Act
-    #Assert
-    assert True
-
-def test_aggregation(tmp_path):
+def test_valid_returned_table(tmp_path):
     #Arrange
     success,db = create_test_db(tmp_path)
     assert success
     #Act
-    ranks = Ranks(db)
+    ranks = Ranks(db,aggregation_limit=1)
     transactions = Transactions(db,ranks)
     #Assert
-    assert True
+    columns = [str(col) for col in [Cols.RANK,Cols.LOGICAL_DAY,Cols.WEEKDAY_NAME,Cols.BARCODE_PROD,Cols.AMOUNT]]
+    expected_data = [
+        [None,"2003-03-04","Tuesday",PRODUCT_SANITIEZED_STR,1],
+        ["rus","2003-03-03","Monday",str(101),8],
+        ["rus","2003-03-04","Tuesday",PRODUCT_SANITIEZED_STR,4],
+        ["vektor","2003-03-03","Monday",PRODUCT_SANITIEZED_STR,1],
+    ]
+    expected_table = pd.DataFrame(expected_data,columns=columns)
+    expected_table[Cols.AMOUNT] = expected_table[Cols.AMOUNT].astype(int)
+    assert transactions.table.equals(expected_table)
 
 def create_test_db(tmp_path):
     path = f"{tmp_path}\\test.sql"
@@ -50,7 +42,6 @@ def generate_products(db:Database):
         [103,"pepsi max",1,"Sodavand",10,100],
         [104,"Grøn",10,"øl",10,100]
     ], columns=columns)
-    print(df)
     upload_result,_ = db.upload_values(df,"prods")
     return upload_result=="success",df
 
@@ -60,9 +51,8 @@ def generate_users(db:Database):
         [1001,"thomas","rus","smølfer"],
         [1002,"helboe","vektor","smølfer"],
         [1003,"poulsen","rus","smølfer"],
-        [1003,"thomas2","rus","smølfer"],
+        [1004,"thomas2","rus","smølfer"],
     ], columns=columns)
-    print(df)
     upload_result,_ = db.upload_values(df,"users")
     return upload_result=="success",df
 
@@ -85,8 +75,8 @@ def generate_transactions(db:Database):
         [1001,101,f"{day2} 06:00:00"],
         [1001,101,f"{day2} 07:00:00"],
         [1001,101,f"{day2} 08:00:00"],
+        [10017,101,f"{day2} 08:00:00"],
 
     ], columns=columns)
-    print(df)
     upload_result,_ = db.upload_values(df,"transactions")
     return upload_result=="success",df

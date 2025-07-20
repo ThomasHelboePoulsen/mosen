@@ -3,21 +3,34 @@ from enum import Enum
 from src.data_connection import Database
 from src.anonymized_data.ranks import Ranks
 
+PRODUCT_SANITIEZED_STR = "ANDRE_VARER"
 
 class Transactions:
     def __init__(self,db:Database,ranks:Ranks):
         df = db.get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,list(Cols))
-        df = df[df[Cols.RANK].isin(ranks.included_ranks)]
+        self.force_dtypes(df)
+        df = df[df[Cols.RANK].isin(ranks.included_ranks) | df[Cols.RANK].isna()]
         df = self.sanitize_rare_combinations(df)
-        output_columns = [Cols.RANK, Cols.LOGICAL_DAY, Cols.WEEKDAY_NAME, Cols.BARCODE_PROD]
+        output_columns = [Cols.RANK, Cols.LOGICAL_DAY, Cols.WEEKDAY_NAME, Cols.BARCODE_PROD,Cols.AMOUNT]
         self.table = df[output_columns]
 
     def sanitize_rare_combinations(self,df):
         minimum_unique_users_per_combination = 2
         df['distinct_users'] = pd.to_numeric(df['distinct_users'], errors='coerce')
         unusual_combinations_mask = df['distinct_users'] < minimum_unique_users_per_combination
-        df.loc[unusual_combinations_mask, 'barcode_prod'] = 'ANDRE_VARER'
+        df.loc[unusual_combinations_mask, 'barcode_prod'] = PRODUCT_SANITIEZED_STR
         return df
+
+
+    def force_dtypes(self,df):
+        str_to_int = [int]
+        tranformations = {
+            Cols.AMOUNT: str_to_int,
+            Cols.DISTINCT_USERS: str_to_int
+        }
+        for col, transforms in tranformations.items():
+            for transform in transforms:
+                df[col] = df[col].astype(transform)
 
 RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY = """WITH shifted AS (
   SELECT *,
