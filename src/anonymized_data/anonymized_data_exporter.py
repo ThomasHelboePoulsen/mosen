@@ -7,7 +7,7 @@ from src.data_connection import Database
 
 
 
-class AnonymizedExportManager():
+class AnonymizedDataExporter():
     def __init__(self):
         self.data = {}
         self.update()
