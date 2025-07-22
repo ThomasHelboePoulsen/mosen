@@ -2,7 +2,6 @@ import zipfile
 import io
 from src.anonymized_data.ranks import Ranks
 from src.anonymized_data.transactions import Transactions
-from src.data_connection import get_prods
 from src.data_connection import Database
 
 

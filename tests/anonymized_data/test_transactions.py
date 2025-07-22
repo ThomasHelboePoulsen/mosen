@@ -3,7 +3,6 @@ import pandas as pd
 from src.data_connection import Database
 from src.anonymized_data.transactions import Transactions,Cols,PRODUCT_SANITIEZED_STR
 from src.anonymized_data.ranks import Ranks
-from datetime import datetime
 
 
 def test_valid_returned_table(tmp_path):

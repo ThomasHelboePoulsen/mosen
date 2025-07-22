@@ -7,7 +7,7 @@ PRODUCT_SANITIEZED_STR = "ANDRE_VARER"
 
 class Transactions:
     def __init__(self,db:Database,ranks:Ranks):
-        df = db.get_query(RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY,list(Cols))
+        df = db.get_query(ENRICHED_TRANSACTIONS_QUERY,list(Cols))
         self.force_dtypes(df)
         df = df[df[Cols.RANK].isin(ranks.included_ranks) | df[Cols.RANK].isna()]
         df = self.sanitize_rare_combinations(df)
@@ -32,7 +32,7 @@ class Transactions:
             for transform in transforms:
                 df[col] = df[col].astype(transform)
 
-RANK_DAY_ITEM_GROUPED_PURCHASES_QUERY = """WITH shifted AS (
+ENRICHED_TRANSACTIONS_QUERY = """WITH shifted AS (
   SELECT *,
     datetime(
       substr(timestamp, 7, 4) || '-' ||
