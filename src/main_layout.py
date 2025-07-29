@@ -197,6 +197,10 @@ def transaction_settings_layout():
                                     ),
                                     html.Hr(),
                                     dbc.Button(
+                                        "Export Anonymized Data", id="export_anonymized_data_btn"
+                                    ),
+                                    html.Hr(),
+                                    dbc.Button(
                                         "Download Raw Transactions",
                                         id={
                                             "index": "transactions",
@@ -236,10 +240,19 @@ def transaction_settings_layout():
                 ),
                 className="show_box",
             ),
+            dbc.Alert(
+                "Export of anonymized data failed",
+                color="danger",
+                id="failed_anonymized_data_export",
+                is_open=False,
+                fade=True,
+                duration=4000,
+            ),
             dcc.Store(id="placeholder_for_empty_output"),
             export_payments_modal(),
             study_users_modal(),
             dcc.Download(id="payments_download"),
+            dcc.Download(id="anonymized_data_download"),
             dcc.Store(id={"index": "transactions", "type": "bad_rows"}),
         ],
     )
@@ -511,10 +524,10 @@ def top_user_chart_modal():
         [
             dbc.ModalHeader(html.H1("Top Buyers")),
             dbc.ModalBody([
-                html.Div(   
+                html.Div(
                             children=[dcc.Graph(
-                                figure=data.get_chart(data.all_products), 
-                                config={"displayModeBar": False}, 
+                                figure=data.get_chart(data.all_products),
+                                config={"displayModeBar": False},
                                 id="top_user_chart"
                             )],
                             id="top_user_chart_content",
@@ -528,10 +541,10 @@ def top_user_chart_modal():
                             dbc.Checklist(
                                 id='products_selector',
                                 options=[{'label': product, 'value': product} for product in data.all_products],
-                                value=data.all_products, 
+                                value=data.all_products,
                                 inline=True,
                                 className="mb-3"
-                            ),  
+                            ),
                         ],
                         className="d-flex justify-content-center",
                         style={"gap": "20px"}
@@ -562,12 +575,12 @@ def layout_func():
                                                 style={"height": "24px", "width": "24px"},
                                             ),
                                             id="open_top_user_chart",
-                                            
+
                                         ),
                                         width=1,
                                         id="open_top_user_chart_wrapper",
                                         style={'visibility': 'hidden'},
-                                        
+
                                     ),
                                     dbc.Col(
                                         dbc.Button(
@@ -714,7 +727,7 @@ def open_report(trigger):
     Input("products_selector", "value"),
 )
 def update_top_user_chart(is_open,selected_traces):
-    if not is_open: 
+    if not is_open:
         return no_update
     fig = TopUserChartData().get_chart(selected_traces)
     fig.update_layout(
@@ -745,7 +758,7 @@ def toggle_checkboxes(n_clicks, current_values):
     if not n_clicks:
         return no_update
     product_names = TopUserChartData().all_products
-    
+
     if set(product_names).issubset(current_values):
         return []
     return product_names
