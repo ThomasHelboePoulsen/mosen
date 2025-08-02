@@ -15,7 +15,7 @@ class Transactions:
         self.table = df[output_columns]
 
     def sanitize_rare_combinations(self,df):
-        minimum_unique_users_per_combination = 2
+        minimum_unique_users_per_combination = 3
         df['distinct_users'] = pd.to_numeric(df['distinct_users'], errors='coerce')
         unusual_combinations_mask = df['distinct_users'] < minimum_unique_users_per_combination
         df.loc[unusual_combinations_mask, 'barcode_prod'] = PRODUCT_SANITIEZED_STR
