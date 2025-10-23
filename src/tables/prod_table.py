@@ -144,7 +144,9 @@ def open_stock(trigger_open, trigger_close, inps):
         return True, no_update
     if trigger == "confirm_new_stock":
         prods = get_prods()
-        prods["current_stock"] = list(inps)
+        if None in inps or any(int(a) < 0 for a in inps): #While current stock can become negative, if someone scans too much, i don't think you would ever set it as negative.
+            return no_update
+        prods["current_stock"] =[str(val) for val in list(inps)]
         upload_values(prods, "prods")
         waste = calculate_waste()
         update_values(waste=waste)
