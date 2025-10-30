@@ -27,7 +27,7 @@ from src.modals import (
     study_users_modal,
 )
 from src.trans_layout import trans_modal
-from src.error_handler import get_view_components,_make_error,append_error
+from src.error_handler import get_error_view_components,append_error
 from src.main_page_callbacks import create_overview
 from src.components import get_upload, get_table
 from src.data_connection import (
@@ -240,14 +240,6 @@ def transaction_settings_layout():
                     ]
                 ),
                 className="show_box",
-            ),
-            dbc.Alert(
-                "Export of anonymized data failed",
-                color="danger",
-                id="failed_anonymized_data_export",
-                is_open=False,
-                fade=True,
-                duration=4000,
             ),
             dcc.Store(id="placeholder_for_empty_output"),
             export_payments_modal(),
@@ -563,7 +555,7 @@ def layout_func():
         [
             html.Div(
                 [
-                    *get_view_components(),
+                    *get_error_view_components(),
                     dbc.Col(
                         [
                             dbc.Row(html.Br()),
@@ -710,7 +702,7 @@ def open_settings(trigger, trigger_enter, password, error_queue):
     ):
         if password == get_password():
             return True, "", no_update
-        return False, no_update, append_error(error_queue,_make_error("Wrong Password", src="login"))
+        return False, no_update, append_error(error_queue,msg="Wrong Password", src="login")
     return False, no_update, no_update
 
 @callback(

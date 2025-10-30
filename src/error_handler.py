@@ -3,33 +3,28 @@ from datetime import datetime, timedelta
 import uuid
 
 
-def get_view_components():
+def get_error_view_components():
     return [
-    # ONE global queue of errors
-    dcc.Store(id="error-queue", data=[]),
-    # overlay that should always sit on top of the app
-    html.Div(id="error-overlay", style={
-        "position": "fixed", "top": 0, "left": 0, "right": 0,
-        "zIndex": 9999, "pointerEvents": "none",   # let clicks pass through
-        "display": "flex", "justifyContent": "center",
-    }),
-    dcc.Interval(id="error-gc", interval=1000, n_intervals=0)
+        # ONE global queue of errors
+        dcc.Store(id="error-queue", data=[]),
+        # overlay that should always sit on top of the app
+        html.Div(id="error-overlay", style={
+            "position": "fixed", "top": 0, "left": 0, "right": 0,
+            "zIndex": 9999, "pointerEvents": "none",   # let clicks pass through
+            "display": "flex", "justifyContent": "center",
+        }),
+        dcc.Interval(id="error-gc", interval=500, n_intervals=0)
     ]
 
 
-TTL_SECONDS = 6  # how long an error stays visible
-def append_error(queue,new_error):
-    return (queue or []) + [new_error]
+def append_error(queue,msg,src="test",lifespan_seconds=6):
+    return (queue or []) + [_make_error(msg,src,lifespan_seconds)]
 
-def _make_error(msg, src="test"):
-    return {"id": str(uuid.uuid4()), "msg": msg, "src": src, "expires": _expires_at()}
+def _make_error(msg, src,lifespan_seconds):
+    return {"id": str(uuid.uuid4()), "msg": msg, "src": src, "expires": _expires_at(lifespan_seconds)}
 
-def _now():
-    return datetime.utcnow()
-
-def _expires_at(ttl=TTL_SECONDS):
-    return (_now() + timedelta(seconds=ttl)).isoformat()
-
+def _expires_at(lifespan_seconds):
+    return (datetime.utcnow() + timedelta(seconds=lifespan_seconds)).isoformat()
 
 # --- CONSUMER: render overlay (always on top) ---
 
@@ -74,7 +69,7 @@ def render_overlay(queue):
 def gc_errors(_tick, queue):
     if not queue:
         return no_update
-    now_iso = _now().isoformat()
+    now_iso = datetime.utcnow().isoformat()
     alive = [e for e in queue if e.get("expires", now_iso) > now_iso]
     if len(alive) == len(queue):
         return no_update

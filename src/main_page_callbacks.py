@@ -14,6 +14,7 @@ from src.tables.trans_table import get_income
 from src.barcode_generator import generate_pdf
 from src.anonymized_data.ranks import Ranks
 from src.anonymized_data.anonymized_data_exporter import AnonymizedDataExporter
+from src.error_handler import append_error
 
 import base64
 import io
@@ -231,19 +232,20 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
 
 @callback(
     Output("anonymized_data_download", "data"),
-    Output("failed_anonymized_data_export", "children"),
-    Output("failed_anonymized_data_export", "is_open"),
+    Output("error-queue", "data", allow_duplicate=True),
     Input("export_anonymized_data_btn", "n_clicks"),
+    State("error-queue", "data"),
     prevent_initial_call=True
 )
-def download_anonymized_data(n_clicks):
+def download_anonymized_data(n_clicks,error_queue):
+    if n_clicks == None:
+        return no_update, no_update
     try:
         exporter = AnonymizedDataExporter()
         zip_buffer = exporter.data_to_zip_buffer()
-        return dcc.send_bytes(zip_buffer.read(), "tables.zip"),"", False
+        return dcc.send_bytes(zip_buffer.read(), "tables.zip"), no_update
     except Exception as e:
-        print(e)
-        return None, f"❌ {str(e)}", True
+        return no_update, append_error(error_queue, msg=str(e), src="AnonymizedDataExporter")
 
 
 @callback(
