@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from src.components import get_barcode, get_table
+from src.error_handler import append_error
 from src.data_connection import (
     get_prods,
     get_trans,
@@ -82,10 +83,15 @@ def trans_modal():
 
 @callback(
     Output("trans_graph", "figure"),
+    Output("error-queue", "data", allow_duplicate=True),
     Input("new_trans_inp", "n_submit"),
     State("new_trans_inp", "value"),
+    State("error-queue", "data"),
+    prevent_initial_call=True
 )
-def get_transactions(trigger, barcode):
+def get_transactions(trigger, barcode,error_queue):
+    if trigger is None:
+        return no_update, no_update
     users = get_users()
     prods = get_prods()
     barcode = get_barcode(barcode)
@@ -93,11 +99,12 @@ def get_transactions(trigger, barcode):
         prods, "right", left_on="barcode_prod", right_on="barcode"
     )
     user_barcodes = list(map(str, users["barcode"]))
-    if not (trigger is not None and str(barcode) in user_barcodes):
-        return no_update, no_update
+    if not (str(barcode) in user_barcodes):
+        errors = append_error(error_queue, msg="User not found", src=get_transactions.__name__)
+        return no_update, errors
     user_trans = transactions[transactions["barcode_user"] == str(barcode)]
     trans_data = [user_trans["name"].value_counts().to_dict()]
-    return px.bar(trans_data)
+    return px.bar(trans_data), no_update
 
 
 @callback(
