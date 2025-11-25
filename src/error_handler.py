@@ -1,19 +1,33 @@
-from dash import Dash, html, dcc, Input, Output, State, Patch, callback, no_update
+from dash import Dash, html, dcc, Input, Output, State, Patch, callback, no_update, clientside_callback
 from datetime import datetime, timedelta
 import uuid
 
+ERROR_QUEUE_ID = "error-queue"
+ERROR_COUNT_ID = "error-count"
+ERROR_BEEP_ID  = "error-beep"
+ERROR_GC_ID    = "error-gc"
+ERROR_OVERLAY_ID = "error-overlay"
 
 def get_error_view_components():
     return [
         # ONE global queue of errors
-        dcc.Store(id="error-queue", data=[]),
+        dcc.Store(id=ERROR_QUEUE_ID, data=[]),
+
+        #Updated clientside, to trigger sound effect:
+        dcc.Store(id=ERROR_COUNT_ID, data=0),
+
+        html.Audio(
+            id=ERROR_BEEP_ID,
+            src="/assets/errorSound.mp3",
+            style={"display": "none"}  
+        ),
         # overlay that should always sit on top of the app
-        html.Div(id="error-overlay", style={
+        html.Div(id=ERROR_OVERLAY_ID, style={
             "position": "fixed", "top": 0, "left": 0, "right": 0,
             "zIndex": 9999, "pointerEvents": "none",   # let clicks pass through
             "display": "flex", "justifyContent": "center",
         }),
-        dcc.Interval(id="error-gc", interval=500, n_intervals=0)
+        dcc.Interval(id=ERROR_GC_ID, interval=500, n_intervals=0)
     ]
 
 
@@ -29,8 +43,8 @@ def _expires_at(lifespan_seconds):
 # --- CONSUMER: render overlay (always on top) ---
 
 @callback(
-    Output("error-overlay", "children"),
-    Input("error-queue", "data"),
+    Output(ERROR_OVERLAY_ID, "children"),
+    Input(ERROR_QUEUE_ID, "data"),
 )
 def render_overlay(queue):
     if not queue:
@@ -61,9 +75,9 @@ def render_overlay(queue):
 # --- TIMER: prune expired messages so they disappear automatically ---
 
 @callback(
-    Output("error-queue", "data", allow_duplicate=True),
-    Input("error-gc", "n_intervals"),
-    State("error-queue", "data"),
+    Output(ERROR_QUEUE_ID, "data", allow_duplicate=True),
+    Input(ERROR_GC_ID, "n_intervals"),
+    State(ERROR_QUEUE_ID, "data"),
     prevent_initial_call=True,
 )
 def gc_errors(_tick, queue):
@@ -77,3 +91,32 @@ def gc_errors(_tick, queue):
     p.clear()
     p.extend(alive)
     return p
+
+
+#Play sound when adding error
+clientside_callback(
+    f"""
+    function(queue, prevCount) {{
+        const count = (queue || []).length;
+        if (prevCount == null) {{
+            prevCount = 0;
+        }}
+
+        if (count > prevCount) {{
+            const audio = document.getElementById('{ERROR_BEEP_ID}');
+            if (audio) {{
+                try {{
+                    audio.currentTime = 0;
+                    audio.play();
+                }} catch (e) {{
+                    console.warn("Could not play error sound:", e);
+                }}
+            }}
+        }}
+        return count;
+    }}
+    """,
+    Output(ERROR_COUNT_ID, "data"),
+    Input(ERROR_QUEUE_ID, "data"),
+    State(ERROR_COUNT_ID, "data"),
+)
