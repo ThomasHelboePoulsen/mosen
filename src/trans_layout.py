@@ -112,30 +112,35 @@ def get_transactions(trigger, barcode,error_queue):
     Output("new_trans_inp", "value"),
     Output("prod_barcode", "value", allow_duplicate=True),
     Output("bad_barcode_alert", "is_open"),
+    Output("error-queue", "data", allow_duplicate=True),
     Input("new_trans_inp", "n_submit"),
     Input("prod_barcode", "n_submit"),
     State("new_trans_inp", "value"),
     State("prod_barcode", "value"),
+    State("error-queue", "data"),
     prevent_initial_call=True,
 )
-def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
+def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close,error_queue):
+    errors = lambda msg: append_error(error_queue, msg=str(msg), src=open_trans_modal.__name__)
     users = get_users()
     barcode_open = get_barcode(barcode_open)
     if barcode_open == "bad barcode":
-        return no_update, "", no_update, no_update
+        return no_update, "", no_update, no_update, errors(f"Invalid barcode: {barcode_open}")
     barcode_close = get_barcode(barcode_close)
     if barcode_close == "bad barcode":
-        return no_update, no_update, "", no_update
+        return no_update, no_update, "", no_update, errors(f"Invalid barcode: {barcode_close}")
     user_barcodes = list(users["barcode"])
     trigger = ctx.triggered_id
     if trigger == "new_trans_inp":
         if len(user_barcodes) < 1:
-            return no_update, "", no_update, True
+            return no_update, "", no_update, True, errors("No users exist")
+        if barcode_open is None or not barcode_open.isdecimal():
+            return no_update, "", no_update, False, errors("Empty barcode")
         if str(int(barcode_open)) in user_barcodes:
             reset_current_trans()
-            return True, no_update, "", False
-        return no_update, "", no_update, False
-    elif trigger == "prod_barcode" and int(barcode_close) == int(barcode_open):
+            return True, no_update, "", False, no_update
+        return no_update, "", no_update, False, no_update #I couldn't provoke this branch when testing
+    elif trigger == "prod_barcode" and strings_map_to_same_number(barcode_close,barcode_open):
         prods = get_prods()
         current = get_current_trans()
         new_rows = pd.DataFrame(
@@ -149,39 +154,45 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
             ]
         )
         add_transactions(new_rows)
-        return False, "", no_update, False
-    return no_update, no_update, no_update, False
+        return False, "", no_update, False, no_update
+    
+    return no_update, no_update, no_update, False, no_update
 
+def strings_map_to_same_number(s1,s2):
+    return s1.isdecimal() and s2.isdecimal() and int(s1) == int(s2)
 
 @callback(
     Output("show_current_prods", "children"),
     Output("prod_barcode", "value"),
+    Output("error-queue", "data", allow_duplicate=True),
     Input("prod_barcode", "n_submit"),
     State("prod_barcode", "value"),
     State("new_trans_inp", "value"),
+    State("error-queue", "data"),
     prevent_initial_call=True,
 )
-def new_trans(trigger, barcode, user_barcode):
+def new_trans(trigger, barcode, user_barcode,error_queue):
+    errors = lambda msg: append_error(error_queue, msg=str(msg), src=new_trans.__name__)
     prods = get_prods()
     current = get_current_trans()
     barcode = get_barcode(barcode)
-    if barcode == "bad barcode":
-        return no_update, ""
+    if not str(barcode).isdigit():
+        return no_update, "", errors(f"Invalid barcode: \"{barcode}\"")
     user_barcode = get_barcode(user_barcode)
     if barcode == user_barcode:
         return (
             [html.H1("Products: ")],
             "",
-        )
+        ) , no_update, no_update
     elif int(barcode) == 0:
         if len(current) == 0:
-            return no_update, ""
+            return no_update, "", errors("You can't remove products before adding any")
         last_barcode = current.iloc[len(current) - 1]["barcode_prod"]
         indecies = current[current["barcode_prod"] == str(last_barcode)].index
         current.drop(indecies, inplace=True)
     elif len(barcode) < 3:
         if len(current) == 0:
-            return no_update, ""
+            return no_update, "", errors("You can't use a multiplier without choosing product")
         last_barcode = current.iloc[len(current) - 1]["barcode_prod"]
         current_amount = len(current[current["barcode_prod"] == str(last_barcode)])
         addition = int(barcode) if current_amount > 1 else int(barcode) - 1
@@ -192,12 +203,13 @@ def new_trans(trigger, barcode, user_barcode):
             ]
             current = pd.concat([current, pd.DataFrame(data)], ignore_index=True)
     elif str(int(barcode)) not in list(prods["barcode"]):
-        return no_update, ""
+        not_found = "Product" if int(barcode) < 1000 else "User"
+        return no_update, "", errors(f"{not_found} not found: {barcode}")
     else:
         try:
             product = prods[prods["barcode"] == str(barcode)]
         except:
-            return no_update, "", no_update
+            return no_update, "", no_update, errors(f"Product not found: {barcode}")
         name = str(product["name"].values[0])
         new_transaction = pd.DataFrame([{"barcode_prod": barcode, "name": name}])
         current = pd.concat([current, new_transaction], ignore_index=True)
@@ -211,7 +223,7 @@ def new_trans(trigger, barcode, user_barcode):
 
     update_current_trans(current)
 
-    return display_text, ""
+    return display_text, "", no_update
 
 
 @callback(
