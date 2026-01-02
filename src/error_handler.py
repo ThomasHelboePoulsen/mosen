@@ -8,6 +8,8 @@ ERROR_BEEP_ID  = "error-beep"
 ERROR_GC_ID    = "error-gc"
 ERROR_OVERLAY_ID = "error-overlay"
 
+SHOW_ERROR_SOURCE_IN_OVERLAY = False
+
 def get_error_view_components():
     return [
         # ONE global queue of errors
@@ -19,7 +21,7 @@ def get_error_view_components():
         html.Audio(
             id=ERROR_BEEP_ID,
             src="/assets/errorSound.mp3",
-            style={"display": "none"}  
+            style={"display": "none"}
         ),
         # overlay that should always sit on top of the app
         html.Div(id=ERROR_OVERLAY_ID, style={
@@ -51,11 +53,12 @@ def render_overlay(queue):
         return ""
 
     items = []
+    errors_source_display = lambda e : f"({e.get('src')}) " if SHOW_ERROR_SOURCE_IN_OVERLAY else ""
     for e in reversed(queue):
         items.append(
             html.Div(
                 [
-                    html.Span(f"({e.get('src')}) {e.get('msg')}"),
+                    html.Span(f"{errors_source_display(e)}{e.get('msg')}"),
                 ],
                 style={
                     "pointerEvents": "auto",  # allow hovering/copying text
