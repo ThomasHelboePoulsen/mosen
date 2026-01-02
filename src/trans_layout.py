@@ -155,7 +155,7 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close,er
         )
         add_transactions(new_rows)
         return False, "", no_update, False, no_update
-    
+
     return no_update, no_update, no_update, False, no_update
 
 def strings_map_to_same_number(s1,s2):
@@ -176,14 +176,15 @@ def new_trans(trigger, barcode, user_barcode,error_queue):
     prods = get_prods()
     current = get_current_trans()
     barcode = get_barcode(barcode)
-    if not str(barcode).isdigit():
+    if (not str(barcode).isdigit()) or len(str(barcode)) < 1:
         return no_update, "", errors(f"Invalid barcode: \"{barcode}\"")
     user_barcode = get_barcode(user_barcode)
     if barcode == user_barcode:
         return (
             [html.H1("Products: ")],
             "",
-        ) , no_update, no_update
+            no_update
+        )
     elif int(barcode) == 0:
         if len(current) == 0:
             return no_update, "", errors("You can't remove products before adding any")
