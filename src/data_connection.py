@@ -7,13 +7,14 @@ import sqlite3
 import keyboard as k
 
 from src.tables.create_tables import table_defs
+from src.container import Container
 
 class Database():
     def __init__(self,data_file="beerbase.db"):
         self.data_file = data_file
 
     def init(self):
-        if not os.path.exists(self.data_file):
+        if self.data_file != ":memory:" and not os.path.exists(self.data_file):
             open(self.data_file, "w")
 
         con = sqlite3.connect(self.data_file)
@@ -101,11 +102,12 @@ class Database():
         bad = False
         if sum(array(users["barcode"]) == row["barcode"]) > 1:
             bad = True
-            row["barcode"] = max(users["barcode"]) + 1
+            row["barcode"] = max(int(b) for b in users["barcode"]) + 1
         if len(str(row["barcode"])) < 4 or len(str(row["barcode"])) > 11:
             bad = True
+            user_barcodes = [int(b) for b in users["barcode"]]
             for i in range(1000, 100000000000):
-                if i not in users["barcode"]:
+                if i not in user_barcodes:
                     row["barcode"] = i
                     break
             return row, bad
@@ -131,11 +133,12 @@ class Database():
             return row, bad
         if sum(array(prods["barcode"]) == row["barcode"]) > 1:
             bad = True
-            row["barcode"] = max(prods["barcode"]) + 1
+            row["barcode"] = max(int(b) for b in prods["barcode"]) + 1
         if len(str(row["barcode"])) < 3 or len(str(row["barcode"])) > 3:
             bad = True
+            prod_barcodes = [int(b) for b in prods["barcode"]]
             for i in range(100, 1000):
-                if i not in prods["barcode"]:
+                if i not in prod_barcodes:
                     row["barcode"] = i
                     break
             return row, bad
@@ -155,26 +158,26 @@ class Database():
 
 
 def get_prods():
-    return Database().get_prods()
+    return Container.get_db().get_prods()
 
 def get_trans():
-    return Database().get_trans()
+    return Container.get_db().get_trans()
 
 
 def get_users():
     query = "SELECT * FROM users"
     cols = ["barcode", "name", "rank", "team"]
-    return Database().get_query(query,cols)
+    return Container.get_db().get_query(query,cols)
 
 
 def get_current_trans():
     query = "SELECT * FROM temporary"
     cols = ["barcode_prod", "name"]
-    return Database().get_query(query,cols)
+    return Container.get_db().get_query(query,cols)
 
 
 def update_current_trans(data: pd.DataFrame):
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     if len(data.columns == 2):
         data.to_sql(name="temporary", con=con, if_exists="replace", index=False)
         con.commit()
@@ -183,7 +186,7 @@ def update_current_trans(data: pd.DataFrame):
 
 
 def reset_table(table: str):
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     cur.execute(f"DELETE FROM {table}")
     print(f"Reset on {table}")
     con.commit()
@@ -194,10 +197,10 @@ def reset_current_trans():
 
 
 def upload_values(data: list, table: str):
-    return Database().upload_values(data,table)
+    return Container.get_db().upload_values(data,table)
 
 def add_transactions(trans_df):
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     trans_df.to_sql(name="transactions", con=con, if_exists="append", index=False)
 
 
@@ -213,7 +216,7 @@ def check_db(data, con, cur):
 
 
 def get_password():
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT password FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT password FROM settings"))
@@ -221,7 +224,7 @@ def get_password():
 
 
 def get_backup_time():
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT backup FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT backup FROM settings"))
@@ -229,7 +232,7 @@ def get_backup_time():
 
 
 def get_show_bill():
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT show_bill FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT show_bill FROM settings"))
@@ -237,7 +240,7 @@ def get_show_bill():
 
 
 def get_waste():
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT waste FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT waste FROM settings"))
@@ -245,7 +248,7 @@ def get_waste():
 
 
 def update_values(password=None, show_bill=None, waste=None, backup_time=None):
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     inps = {
         "password": password,
         "show_bill": show_bill,
@@ -260,7 +263,7 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None):
 
 
 def reset_all_tables():
-    con, cur = Database().init()
+    con, cur = Container.get_db().init()
     for table in table_defs().keys():
         cur.execute(f"DROP TABLE {table}")
         con.commit()

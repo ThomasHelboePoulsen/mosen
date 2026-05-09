@@ -1,6 +1,11 @@
 import dash
 import dash_bootstrap_components as dbc
 
+from src.container import init_db
+
+# Initialize database container
+init_db()
+
 # Create the Dash app
 app = dash.Dash(
     title="Mosemaskinen 4.0",
