@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 from src.data_connection import Database
+from src.container import Container
 from src.anonymized_data.ranks import Ranks,EXCLUDED_STRING,Cols
 
 MINIMUM_USER_BARCODE = 1000
@@ -75,6 +76,7 @@ def test_included_and_excluded_are_disjoint(tmp_path):
 def create_test_user_table(tmp_path,rank_count=15):
     users = generate_synthetic_users(rank_count)
     db = Database(f"{tmp_path}\\Test.db")
+    Container.set_db(db)
     upload_result,_ = db.upload_values(users,"users")
     return db, upload_result, users
 

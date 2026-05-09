@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 from src.data_connection import Database
+from src.container import Container
 from src.anonymized_data.transactions import Transactions,Cols,PRODUCT_SANITIEZED_STR
 from src.anonymized_data.ranks import Ranks
 
@@ -27,6 +28,7 @@ def test_valid_returned_table(tmp_path):
 def create_test_db(tmp_path):
     path = f"{tmp_path}\\test.sql"
     db = Database(path)
+    Container.set_db(db)
     success1,_ = generate_products(db)
     success2,_ = generate_users(db)
     success3,_ = generate_transactions(db)
