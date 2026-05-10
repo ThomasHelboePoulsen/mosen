@@ -198,10 +198,6 @@ def transaction_settings_layout():
                                     ),
                                     html.Hr(),
                                     dbc.Button(
-                                        "Export Anonymized Data", id="export_anonymized_data_btn"
-                                    ),
-                                    html.Hr(),
-                                    dbc.Button(
                                         "Download Raw Transactions",
                                         id={
                                             "index": "transactions",
@@ -245,7 +241,6 @@ def transaction_settings_layout():
             export_payments_modal(),
             study_users_modal(),
             dcc.Download(id="payments_download"),
-            dcc.Download(id="anonymized_data_download"),
             dcc.Store(id={"index": "transactions", "type": "bad_rows"}),
         ],
     )
