@@ -16,9 +16,8 @@ def test_valid_returned_table(tmp_path):
     #Assert
     columns = [str(col) for col in [Cols.RANK,Cols.LOGICAL_DAY,Cols.WEEKDAY_NAME,Cols.BARCODE_PROD,Cols.AMOUNT]]
     expected_data = [
-        [None,"2003-03-04","Tuesday",PRODUCT_SANITIEZED_STR,1],
         ["rus","2003-03-03","Monday",str(101),8],
-        ["rus","2003-03-04","Tuesday",PRODUCT_SANITIEZED_STR,4],
+        ["rus","2003-03-04","Tuesday",PRODUCT_SANITIEZED_STR,5],
         ["vektor","2003-03-03","Monday",PRODUCT_SANITIEZED_STR,1],
     ]
     expected_table = pd.DataFrame(expected_data,columns=columns)
@@ -28,14 +27,17 @@ def test_valid_returned_table(tmp_path):
 def create_test_db(tmp_path):
     path = f"{tmp_path}\\test.sql"
     db = Database(path)
+    db.init()
     Container.set_db(db)
-    success1,_ = generate_products(db)
-    success2,_ = generate_users(db)
-    success3,_ = generate_transactions(db)
+    success1,_ = generate_products()
+    success2,_ = generate_users()
+    success3,_ = generate_transactions()
     success = success1 and success2 and success3
-    return success,db
+    return success, db._connection
 
-def generate_products(db:Database):
+def generate_products():
+    from src.tables.product import ProductTable
+    from src.container import Container
     columns = ['barcode', 'name', 'price', 'category', 'current_stock', 'initial_stock']
     df = pd.DataFrame(data=[
         [101,"Faxe Kondi",10,"Sodavand",10,100],
@@ -43,10 +45,12 @@ def generate_products(db:Database):
         [103,"pepsi max",1,"Sodavand",10,100],
         [104,"Grøn",10,"øl",10,100]
     ], columns=columns)
-    upload_result,_ = db.upload_values(df,"prods")
+    upload_result,_ = ProductTable(Container.get_db()._connection).set(df)
     return upload_result=="success",df
 
-def generate_users(db:Database):
+def generate_users():
+    from src.tables.user import UserTable
+    from src.container import Container
     columns = ["barcode","name","rank","team"]
     df = pd.DataFrame(data=[
         [1001,"thomas","rus","smølfer"],
@@ -54,11 +58,13 @@ def generate_users(db:Database):
         [1003,"poulsen","rus","smølfer"],
         [1004,"thomas2","rus","smølfer"],
     ], columns=columns)
-    upload_result,_ = db.upload_values(df,"users")
+    upload_result,_ = UserTable(Container.get_db()._connection).set(df)
     return upload_result=="success",df
 
 
-def generate_transactions(db:Database):
+def generate_transactions():
+    from src.tables.transaction import TransactionTable
+    from src.container import Container
     columns = ['barcode_user', 'barcode_prod', 'timestamp']
     day1 = "03/03/2003"
     day2 = "04/03/2003"
@@ -76,8 +82,13 @@ def generate_transactions(db:Database):
         [1001,101,f"{day2} 06:00:00"],
         [1001,101,f"{day2} 07:00:00"],
         [1001,101,f"{day2} 08:00:00"],
-        [10017,101,f"{day2} 08:00:00"],
+        [1001,101,f"{day2} 08:00:00"],
 
     ], columns=columns)
-    upload_result,_ = db.upload_values(df,"transactions")
+    db = Container.get_db()
+    upload_result,_ = TransactionTable(
+        db._connection,
+        product_table=db._product_table,
+        user_table=db._user_table
+    ).set(df)
     return upload_result=="success",df

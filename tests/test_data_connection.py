@@ -16,10 +16,10 @@ from src.data_connection import (
     update_values,
 )
 
-
 @pytest.fixture
-def test_db():
-    db = Database(":memory:")
+def test_db(tmp_path):
+    db_file = str(tmp_path / "test.db")
+    db = Database(db_file)
     db.init()
     Container.set_db(db)
     yield db

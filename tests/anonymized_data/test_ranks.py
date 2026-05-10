@@ -76,9 +76,11 @@ def test_included_and_excluded_are_disjoint(tmp_path):
 def create_test_user_table(tmp_path,rank_count=15):
     users = generate_synthetic_users(rank_count)
     db = Database(f"{tmp_path}\\Test.db")
+    db.init()
     Container.set_db(db)
-    upload_result,_ = db.upload_values(users,"users")
-    return db, upload_result, users
+    from src.tables.user import UserTable
+    upload_result,_ = UserTable(db._connection).set(users)
+    return db._connection, upload_result, users
 
 def generate_synthetic_users(rank_count) -> pd.DataFrame:
     """generate users with distinct barcodes, where there are exactly j users in rankj. name and team don't differ"""

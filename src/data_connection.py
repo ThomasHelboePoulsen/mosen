@@ -1,189 +1,113 @@
-import os
-
 import pandas as pd
-from numpy import array
 from datetime import datetime
-import sqlite3
 import keyboard as k
 
-from src.tables.create_tables import table_defs
-from src.container import Container
+from src.container import Container, init_db
+from src.tables.product import ProductTable
+from src.tables.user import UserTable
+from src.tables.transaction import TransactionTable
 
-class Database():
-    def __init__(self,data_file="beerbase.db"):
-        self.data_file = data_file
 
+class Database:
+    """DB handler for all business objects."""
+    def __init__(self, data_file="beerbase.db"):
+        from src.connection import Connection
+        self._connection = Connection(data_file)
+        self._product_table = ProductTable(self._connection)
+        self._user_table = UserTable(self._connection)
+        self._transaction_table = TransactionTable(
+            self._connection,
+            product_table=self._product_table,
+            user_table=self._user_table
+        )
+    
     def init(self):
-        if self.data_file != ":memory:" and not os.path.exists(self.data_file):
-            open(self.data_file, "w")
-
-        con = sqlite3.connect(self.data_file)
-        cur = con.cursor()
-
-        sql_query = """SELECT name FROM sqlite_master
-                                        WHERE type='table';"""
-        cur.execute(sql_query)
-        extraction = lambda x: str(x[0])
-        tables = list(map(extraction, cur.fetchall()))
-        defs = table_defs()
-        for table in defs.keys():
-            if table in tables:
-                continue
-            cur.execute(defs[table])
-            con.commit()
+        """Initialize connection and create all tables."""
+        con, cur = self._connection.connect()
+        self._create_tables()
         return con, cur
-
-    def get_query(self,query:str,columns:list) -> pd.DataFrame:
-        """run query and return df with columns as strings"""
-        #TODO: do we need to create new connections every time? probably quicker to just use one?
-        _, cur = self.init()
-        data = pd.DataFrame(cur.execute(query),columns=columns, dtype=str)
-        return data
-
-
-    def get_prods(self):
-        query = "SELECT * FROM prods"
-        cols = [
-            "barcode",
-            "name",
-            "price",
-            "category",
-            "current_stock",
-            "initial_stock",
-        ]
-        return self.get_query(query,cols)
-
-
-    def get_trans(self):
-        query = "SELECT * FROM transactions"
-        cols = [
-            "barcode_user",
-            "barcode_prod",
-            "timestamp",
-        ]
-        return self.get_query(query,cols)
-
-    def upload_values(self,data: list, table: str):
-        reset_table(table)
-        if type(data) == pd.DataFrame:
-            data = data.to_dict(orient="records")
-        con, cur = self.init()
-        n_cols = {"prods": 6, "transactions": 3, "users": 4}
-        validation = {
-            "prods": self.validate_prod,
-            "transactions": self.validate_trans,
-            "users": self.validate_user,
+    
+    def _create_tables(self):
+        """Create all required tables if they don't exist."""
+        table_schemas = {
+            "prods": ProductTable.create_sql,
+            "users": UserTable.create_sql,
+            "transactions": TransactionTable.create_sql,
+            "temporary": """
+                CREATE TABLE temporary (
+                    barcode_prod varchar(255),
+                    name varchar(255)
+                )
+            """,
+            "settings": """
+                CREATE TABLE settings (
+                    password varchar(255),
+                    show_bill varchar(255),
+                    waste varchar(255),
+                    backup varchar(255)
+                )
+            """,
         }
-
-        bad_rows = list()
-        good_rows = list()
-        for row in data:
-            row, bad = validation[table](row, data)
-            for col, val in row.items():
-                if val is None or str(val).replace(" ", "") == "":
-                    row[col] = "Unkown"
-                    bad = True
-            if bad:
-                bad_rows.append(row)
-            else:
-                good_rows.append(row)
-
-        data = pd.DataFrame(good_rows)
-        if n_cols[table] == len(data.columns):
-            data.to_sql(name=table, con=con, if_exists="replace", index=False)
-            con.commit()
-            return "success", bad_rows
+        
+        con, cur = self._connection.connect()
+        for table_name, create_sql in table_schemas.items():
+            if not self._table_exists(table_name):
+                cur.execute(create_sql)
+                con.commit()
+        con.close()
+    
+    def _table_exists(self, table_name: str) -> bool:
+        return self._connection.table_exists(table_name)
+    
+    def get_query(self, query: str, columns: list):
+        return self._connection.get_query(query, columns)
+    
+    def validate_prod(self, row: dict, data: list) -> tuple[dict, bool]:
+        return self._product_table.validate(row, data)
+    
+    def validate_user(self, row: dict, data: list) -> tuple[dict, bool]:
+        return self._user_table.validate(row, data)
+    
+    def validate_trans(self, row: dict, data: list) -> tuple[dict, bool]:
+        return self._transaction_table.validate(row, data)
+    
+    def upload_values(self, data: list, table: str) -> tuple[str, list]:
+        """Upload data to table."""
+        if table == "prods":
+            return self._product_table.set(data)
+        elif table == "users":
+            return self._user_table.set(data)
+        elif table == "transactions":
+            return self._transaction_table.set(data)
         else:
-            return table, None
-
-
-    def validate_user(self,row: dict, data: list):
-        users = pd.DataFrame(data)
-        bad = False
-        if sum(array(users["barcode"]) == row["barcode"]) > 1:
-            bad = True
-            row["barcode"] = max(int(b) for b in users["barcode"]) + 1
-        if len(str(row["barcode"])) < 4 or len(str(row["barcode"])) > 11:
-            bad = True
-            user_barcodes = [int(b) for b in users["barcode"]]
-            for i in range(1000, 100000000000):
-                if i not in user_barcodes:
-                    row["barcode"] = i
-                    break
-            return row, bad
-        return row, bad
-
-
-    def validate_prod(self,row: dict, data: list):
-        prods = pd.DataFrame(data)
-        bad = False
-        actual_colums = [
-            "barcode",
-            "name",
-            "price",
-            "category",
-            "current_stock",
-            "initial_stock",
-        ]
-        if set(prods.columns) != set(actual_colums):
-            bad = True
-            print(
-                f"It seems that there is a mismatch in the column names of your file. Make sure that the columns are: \n{actual_colums}"
-            )
-            return row, bad
-        if sum(array(prods["barcode"]) == row["barcode"]) > 1:
-            bad = True
-            row["barcode"] = max(int(b) for b in prods["barcode"]) + 1
-        if len(str(row["barcode"])) < 3 or len(str(row["barcode"])) > 3:
-            bad = True
-            prod_barcodes = [int(b) for b in prods["barcode"]]
-            for i in range(100, 1000):
-                if i not in prod_barcodes:
-                    row["barcode"] = i
-                    break
-            return row, bad
-        return row, bad
-
-
-    def validate_trans(self,row: dict, data: list):
-        prods = self.get_prods()
-        if str(row["barcode_prod"]) not in list(prods["barcode"]):
-            print("HUHHH")
-            print(str(row["barcode_prod"]))
-            print(list(prods["barcode"]))
-            return row, True
-        return row, False
-
-
+            raise ValueError(f"Unknown table: {table}")
+    
+    @property
+    def data_file(self):
+        return self._connection.data_file
 
 
 def get_prods():
-    return Container.get_db().get_prods()
+    return Container.get_db()._product_table.get()
 
 def get_trans():
-    return Container.get_db().get_trans()
-
+    return Container.get_db()._transaction_table.get()
 
 def get_users():
-    query = "SELECT * FROM users"
-    cols = ["barcode", "name", "rank", "team"]
-    return Container.get_db().get_query(query,cols)
-
+    return Container.get_db()._user_table.get()
 
 def get_current_trans():
     query = "SELECT * FROM temporary"
     cols = ["barcode_prod", "name"]
-    return Container.get_db().get_query(query,cols)
-
+    return Container.get_db().get_query(query, cols)
 
 def update_current_trans(data: pd.DataFrame):
     con, cur = Container.get_db().init()
-    if len(data.columns == 2):
+    if len(data.columns) == 2:
         data.to_sql(name="temporary", con=con, if_exists="replace", index=False)
         con.commit()
     else:
         raise ValueError("Incorrect data")
-
 
 def reset_table(table: str):
     con, cur = Container.get_db().init()
@@ -191,18 +115,15 @@ def reset_table(table: str):
     print(f"Reset on {table}")
     con.commit()
 
-
 def reset_current_trans():
     reset_table("temporary")
 
-
 def upload_values(data: list, table: str):
-    return Container.get_db().upload_values(data,table)
+    return Container.get_db().upload_values(data, table)
 
 def add_transactions(trans_df):
     con, cur = Container.get_db().init()
     trans_df.to_sql(name="transactions", con=con, if_exists="append", index=False)
-
 
 def check_db(data, con, cur):
     if len(data) == 0:
@@ -214,14 +135,12 @@ def check_db(data, con, cur):
     else:
         return True
 
-
 def get_password():
     con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT password FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT password FROM settings"))
     return data[0][0]
-
 
 def get_backup_time():
     con, cur = Container.get_db().init()
@@ -230,7 +149,6 @@ def get_backup_time():
         data = list(cur.execute("SELECT backup FROM settings"))
     return int(data[0][0])
 
-
 def get_show_bill():
     con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT show_bill FROM settings"))
@@ -238,14 +156,12 @@ def get_show_bill():
         data = list(cur.execute("SELECT show_bill FROM settings"))
     return data[0][0] == "True"
 
-
 def get_waste():
     con, cur = Container.get_db().init()
     data = list(cur.execute("SELECT waste FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT waste FROM settings"))
     return int(data[0][0])
-
 
 def update_values(password=None, show_bill=None, waste=None, backup_time=None):
     con, cur = Container.get_db().init()
@@ -261,12 +177,11 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None):
         cur.execute(f"""UPDATE settings SET "{key}" = '{value}'""")
         con.commit()
 
-
 def reset_all_tables():
     con, cur = Container.get_db().init()
-    for table in table_defs().keys():
+    for table in ["users", "prods", "transactions", "temporary", "settings"]:
         cur.execute(f"DROP TABLE {table}")
         con.commit()
-    con, cur = Database().init()
+    init_db()
     k.unhook_all()
     k.send("alt+f4")

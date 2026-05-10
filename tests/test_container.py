@@ -15,13 +15,14 @@ class TestContainer:
 
     def test_set_db_registers_instance(self):
         # Arrange
-        test_db = Database(":memory:")
+        db = Database(":memory:")
+        db.init()
         
         # Act
-        Container.set_db(test_db)
+        Container.set_db(db)
         
         # Assert
-        assert Container.get_db() is test_db
+        assert Container.get_db() is db
 
     def test_get_db_raises_error_when_not_initialized(self):
         # Arrange
@@ -33,8 +34,9 @@ class TestContainer:
 
     def test_reset_clears_registered_instance(self):
         # Arrange
-        test_db = Database(":memory:")
-        Container.set_db(test_db)
+        db = Database(":memory:")
+        db.init()
+        Container.set_db(db)
         
         # Act
         Container.reset()
