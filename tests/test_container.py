@@ -1,6 +1,6 @@
 import pytest
 
-from src.container import Container, init_db
+from src.container import Container
 from src.data_connection import Database
 
 
@@ -13,46 +13,61 @@ class TestContainer:
     def teardown_method(self):
         Container.reset()
 
-    def test_set_db_registers_instance(self):
+    def test_set_registers_instance_by_type(self):
         # Arrange
         db = Database(":memory:")
-        db.init()
         
         # Act
-        Container.set_db(db)
+        Container.set(Database, db)
         
         # Assert
-        assert Container.get_db() is db
+        assert Container.get(Database) is db
 
-    def test_get_db_raises_error_when_not_initialized(self):
+    def test_get_raises_error_when_not_initialized(self):
         # Arrange
         Container.reset()
         
         # Act & Assert
         with pytest.raises(RuntimeError, match="Database not initialized"):
-            Container.get_db()
+            Container.get(Database)
 
-    def test_reset_clears_registered_instance(self):
+    def test_reset_clears_registered_instances(self):
         # Arrange
         db = Database(":memory:")
-        db.init()
-        Container.set_db(db)
+        Container.set(Database, db)
         
         # Act
         Container.reset()
         
         # Assert
         with pytest.raises(RuntimeError):
-            Container.get_db()
+            Container.get(Database)
 
-    def test_init_db_creates_and_registers_database(self):
+    def test_can_register_and_retrieve_multiple_types(self):
         # Arrange
-        db_file = ":memory:"
+        class ServiceA:
+            pass
+        
+        class ServiceB:
+            pass
+        
+        service_a = ServiceA()
+        service_b = ServiceB()
         
         # Act
-        init_db(db_file)
-        retrieved_db = Container.get_db()
+        Container.set(ServiceA, service_a)
+        Container.set(ServiceB, service_b)
+        
+        # Assert
+        assert Container.get(ServiceA) is service_a
+        assert Container.get(ServiceB) is service_b
+
+    def test_database_initializes_automatically(self):
+        # Arrange & Act
+        db = Database(":memory:")
+        Container.set(Database, db)
+        retrieved_db = Container.get(Database)
         
         # Assert
         assert isinstance(retrieved_db, Database)
-        assert retrieved_db.data_file == db_file
+        assert retrieved_db.data_file == ":memory:"

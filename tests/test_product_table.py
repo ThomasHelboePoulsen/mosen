@@ -9,8 +9,7 @@ from src.tables.product import ProductTable
 def test_db(tmp_path):
     db_file = str(tmp_path / "test.db")
     db = Database(db_file)
-    db.init()
-    Container.set_db(db)
+    Container.set(Database, db)
     yield db
     Container.reset()
 

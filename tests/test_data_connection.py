@@ -20,8 +20,7 @@ from src.data_connection import (
 def test_db(tmp_path):
     db_file = str(tmp_path / "test.db")
     db = Database(db_file)
-    db.init()
-    Container.set_db(db)
+    Container.set(Database, db)
     yield db
     Container.reset()
 
@@ -99,21 +98,21 @@ class TestWrapperFunctions:
 
     def test_wrapper_functions_use_container_database(self, test_db):
         # Arrange
-        container_db = Container.get_db()
+        container_db = Container.get(Database)
         
         # Act
         result = get_prods()
         
         # Assert
         assert isinstance(result, pd.DataFrame)
-        assert Container.get_db() is container_db
+        assert Container.get(Database) is container_db
 
 
 class TestProductValidation:
 
     def test_validate_prod_with_valid_barcode(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         row = {
             "barcode": "123",
             "name": "Beer",
@@ -133,7 +132,7 @@ class TestProductValidation:
 
     def test_validate_prod_rejects_invalid_barcode_length(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         row = {
             "barcode": "12",
             "name": "Beer",
@@ -153,7 +152,7 @@ class TestProductValidation:
 
     def test_validate_prod_rejects_missing_columns(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         row = {
             "barcode": "123",
             "name": "Beer",
@@ -172,7 +171,7 @@ class TestUserValidation:
 
     def test_validate_user_with_valid_barcode(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         row = {
             "barcode": "1000",
             "name": "John",
@@ -190,7 +189,7 @@ class TestUserValidation:
 
     def test_validate_user_rejects_short_barcode(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         row = {
             "barcode": "999",
             "name": "John",
@@ -208,7 +207,7 @@ class TestUserValidation:
 
     def test_validate_user_rejects_long_barcode(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         row = {
             "barcode": "100000000000",
             "name": "John",
@@ -228,7 +227,7 @@ class TestTransactionValidation:
 
     def test_validate_trans_rejects_nonexistent_product(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         trans_row = {
             "barcode_user": "1000",
             "barcode_prod": "999",
@@ -246,7 +245,7 @@ class TestProductValidationWithDuplicates:
 
     def test_validate_prod_handles_duplicate_barcode(self, test_db):
         # Arrange - simulate existing products with duplicates in data
-        db = Container.get_db()
+        db = Container.get(Database)
         existing_prod = {
             "barcode": "123",
             "name": "Beer",
@@ -276,7 +275,7 @@ class TestProductValidationWithDuplicates:
 
     def test_validate_prod_finds_gap_in_barcodes(self, test_db):
         # Arrange - products with gaps in barcode range, new row has invalid length
-        db = Container.get_db()
+        db = Container.get(Database)
         data = [
             {"barcode": "100", "name": "A", "price": "1", "category": "X", "current_stock": "1", "initial_stock": "1"},
             {"barcode": "102", "name": "B", "price": "2", "category": "Y", "current_stock": "1", "initial_stock": "1"},
@@ -296,7 +295,7 @@ class TestUserValidationWithDuplicates:
 
     def test_validate_user_handles_duplicate_barcode(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         existing_user = {
             "barcode": "1000",
             "name": "John",
@@ -321,7 +320,7 @@ class TestUserValidationWithDuplicates:
 
     def test_validate_user_finds_gap_in_barcodes(self, test_db):
         # Arrange - users with gaps in barcode range
-        db = Container.get_db()
+        db = Container.get(Database)
         data = [
             {"barcode": "1000", "name": "A", "rank": "M", "team": "X"},
             {"barcode": "1002", "name": "B", "rank": "M", "team": "Y"},
@@ -341,7 +340,7 @@ class TestUploadValues:
 
     def test_upload_prods_validation_phase(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         valid_prods = [
             {
                 "barcode": "123",
@@ -369,7 +368,7 @@ class TestUploadValues:
 
     def test_upload_prods_rejects_invalid_barcode(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         invalid_prods = [
             {
                 "barcode": "99",
@@ -414,7 +413,7 @@ class TestUploadValues:
 
     def test_upload_with_dataframe_input(self, test_db):
         # Arrange
-        db = Container.get_db()
+        db = Container.get(Database)
         valid_prods_df = pd.DataFrame([
             {
                 "barcode": "123",

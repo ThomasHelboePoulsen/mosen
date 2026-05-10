@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import keyboard as k
 
-from src.container import Container, init_db
+from src.container import Container
 from src.tables.product import ProductTable
 from src.tables.user import UserTable
 from src.tables.transaction import TransactionTable
@@ -20,6 +20,7 @@ class Database:
             product_table=self._product_table,
             user_table=self._user_table
         )
+        self.init()
     
     def init(self):
         """Initialize connection and create all tables."""
@@ -88,21 +89,21 @@ class Database:
 
 
 def get_prods():
-    return Container.get_db()._product_table.get()
+    return Container.get(Database)._product_table.get()
 
 def get_trans():
-    return Container.get_db()._transaction_table.get()
+    return Container.get(Database)._transaction_table.get()
 
 def get_users():
-    return Container.get_db()._user_table.get()
+    return Container.get(Database)._user_table.get()
 
 def get_current_trans():
     query = "SELECT * FROM temporary"
     cols = ["barcode_prod", "name"]
-    return Container.get_db().get_query(query, cols)
+    return Container.get(Database).get_query(query, cols)
 
 def update_current_trans(data: pd.DataFrame):
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     if len(data.columns) == 2:
         data.to_sql(name="temporary", con=con, if_exists="replace", index=False)
         con.commit()
@@ -110,7 +111,7 @@ def update_current_trans(data: pd.DataFrame):
         raise ValueError("Incorrect data")
 
 def reset_table(table: str):
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     cur.execute(f"DELETE FROM {table}")
     print(f"Reset on {table}")
     con.commit()
@@ -119,10 +120,10 @@ def reset_current_trans():
     reset_table("temporary")
 
 def upload_values(data: list, table: str):
-    return Container.get_db().upload_values(data, table)
+    return Container.get(Database).upload_values(data, table)
 
 def add_transactions(trans_df):
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     trans_df.to_sql(name="transactions", con=con, if_exists="append", index=False)
 
 def check_db(data, con, cur):
@@ -136,35 +137,35 @@ def check_db(data, con, cur):
         return True
 
 def get_password():
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     data = list(cur.execute("SELECT password FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT password FROM settings"))
     return data[0][0]
 
 def get_backup_time():
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     data = list(cur.execute("SELECT backup FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT backup FROM settings"))
     return int(data[0][0])
 
 def get_show_bill():
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     data = list(cur.execute("SELECT show_bill FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT show_bill FROM settings"))
     return data[0][0] == "True"
 
 def get_waste():
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     data = list(cur.execute("SELECT waste FROM settings"))
     if not check_db(data, con, cur):
         data = list(cur.execute("SELECT waste FROM settings"))
     return int(data[0][0])
 
 def update_values(password=None, show_bill=None, waste=None, backup_time=None):
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     inps = {
         "password": password,
         "show_bill": show_bill,
@@ -178,10 +179,11 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None):
         con.commit()
 
 def reset_all_tables():
-    con, cur = Container.get_db().init()
+    con, cur = Container.get(Database).init()
     for table in ["users", "prods", "transactions", "temporary", "settings"]:
         cur.execute(f"DROP TABLE {table}")
         con.commit()
-    init_db()
+    db = Database()
+    Container.set(Database, db)
     k.unhook_all()
     k.send("alt+f4")
