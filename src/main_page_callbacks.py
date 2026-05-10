@@ -12,8 +12,7 @@ from src.data_connection import (
 )
 from src.tables.trans_table import get_income
 from src.barcode_generator import generate_pdf
-from src.anonymized_data.ranks import Ranks
-from src.anonymized_data.anonymized_data_exporter import AnonymizedDataExporter
+from src.error_handler import append_error
 
 import base64
 import io
@@ -228,23 +227,6 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
         )
     else:
         return no_update, no_update
-
-@callback(
-    Output("anonymized_data_download", "data"),
-    Output("failed_anonymized_data_export", "children"),
-    Output("failed_anonymized_data_export", "is_open"),
-    Input("export_anonymized_data_btn", "n_clicks"),
-    prevent_initial_call=True
-)
-def download_anonymized_data(n_clicks):
-    try:
-        exporter = AnonymizedDataExporter()
-        zip_buffer = exporter.data_to_zip_buffer()
-        return dcc.send_bytes(zip_buffer.read(), "tables.zip"),"", False
-    except Exception as e:
-        print(e)
-        return None, f"❌ {str(e)}", True
-
 
 @callback(
     Output("export_barcodes_modal", "is_open"),

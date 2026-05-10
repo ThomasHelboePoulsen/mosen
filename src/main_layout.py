@@ -1,3 +1,4 @@
+from app import app
 import keyboard as k
 import time
 from dash import dcc, html, callback, Input, Output, State, ctx, no_update
@@ -26,6 +27,7 @@ from src.modals import (
     study_users_modal,
 )
 from src.trans_layout import trans_modal
+from src.error_handler import get_error_view_components,append_error
 from src.main_page_callbacks import create_overview
 from src.components import get_upload, get_table
 from src.data_connection import (
@@ -38,7 +40,6 @@ from src.data_connection import (
     get_backup_time,
 )
 from src.tables.user_table import init
-from app import app
 
 users_init = init()
 
@@ -197,10 +198,6 @@ def transaction_settings_layout():
                                     ),
                                     html.Hr(),
                                     dbc.Button(
-                                        "Export Anonymized Data", id="export_anonymized_data_btn"
-                                    ),
-                                    html.Hr(),
-                                    dbc.Button(
                                         "Download Raw Transactions",
                                         id={
                                             "index": "transactions",
@@ -240,19 +237,10 @@ def transaction_settings_layout():
                 ),
                 className="show_box",
             ),
-            dbc.Alert(
-                "Export of anonymized data failed",
-                color="danger",
-                id="failed_anonymized_data_export",
-                is_open=False,
-                fade=True,
-                duration=4000,
-            ),
             dcc.Store(id="placeholder_for_empty_output"),
             export_payments_modal(),
             study_users_modal(),
             dcc.Download(id="payments_download"),
-            dcc.Download(id="anonymized_data_download"),
             dcc.Store(id={"index": "transactions", "type": "bad_rows"}),
         ],
     )
@@ -562,6 +550,7 @@ def layout_func():
         [
             html.Div(
                 [
+                    *get_error_view_components(),
                     dbc.Col(
                         [
                             dbc.Row(html.Br()),
@@ -672,7 +661,6 @@ def layout_func():
             dcc.Store(id="backup_filename", data=None),
         ]
     )
-
     return layout
 
 
@@ -693,21 +681,24 @@ def open_password(trigger_open, trigger_close, trigger_enter, password):
         if password == get_password():
             return False
     return no_update
-
 @callback(
     Output("settings_modal", "is_open"),
     Output("password_input", "value"),
+    Output("error-queue", "data", allow_duplicate=True),
     Input("confirm_password", "n_clicks"),
     Input("password_input", "n_submit"),
     State("password_input", "value"),
+    State("error-queue", "data"),
+    prevent_initial_call="initial_duplicate",
 )
-def open_settings(trigger, trigger_enter, password):
+def open_settings(trigger, trigger_enter, password, error_queue):
     if (trigger is not None and trigger > 0) or (
         trigger_enter is not None and trigger_enter > 0
     ):
         if password == get_password():
-            return True, ""
-    return False, no_update
+            return True, "", no_update
+        return False, no_update, append_error(error_queue,msg="Wrong Password", src="login")
+    return False, no_update, no_update
 
 @callback(
     Output("top_user_chart_modal", "is_open"),
