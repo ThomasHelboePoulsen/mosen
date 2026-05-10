@@ -71,13 +71,18 @@ class BaseTable(ABC):
             else:
                 good_rows.append(row)
         
+        if bad_rows:
+            con.close()
+            return self.table_name, bad_rows
+        
         cur.execute(f"DELETE FROM {self.table_name}")
         if good_rows:
             cols = ", ".join(good_rows[0].keys())
             placeholders = ", ".join(["?" for _ in good_rows[0].keys()])
             cur.executemany(f"INSERT INTO {self.table_name} ({cols}) VALUES ({placeholders})", 
                            [list(row.values()) for row in good_rows])
+        
         con.commit()
         con.close()
         
-        return (self.table_name if bad_rows else "success"), bad_rows
+        return "success", bad_rows
