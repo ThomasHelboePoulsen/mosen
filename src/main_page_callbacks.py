@@ -18,14 +18,23 @@ import base64
 import io
 import shutil
 import os
+import zipfile
 from datetime import datetime
 
+
+def filter_guest_users(transactions, users):
+    users = users[users["is_guest"].astype(int) != 1]
+    
+    valid_barcodes = set(users["barcode"].astype(str))
+    transactions = transactions[transactions["barcode_user"].astype(str).isin(valid_barcodes)]
+    return transactions, users
 
 def create_overview(plot_col, average=False):
     prods = get_prods()
     transactions = get_trans()
     users = get_users()
-
+    transactions, users = filter_guest_users(transactions, users)
+    
     if len(transactions) == 0:
         return px.bar()
 
@@ -229,38 +238,39 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
         return no_update, no_update
 
 @callback(
-    Output("export_barcodes_modal", "is_open"),
-    Input("export_barcodes_btn", "n_clicks"),
-    Input("confirm_export_barcodes", "n_clicks"),
-)
-def open_export_barcodes(trigger_open, trigger_close):
-    trigger = ctx.triggered_id
-    if trigger == "export_barcodes_btn":
-        return True
-    elif trigger == "confirm_export_barcodes":
-        return False
-    else:
-        return no_update
-
-
-@callback(
     Output("pdf_download", "data"),
-    Input("confirm_export_barcodes", "n_clicks"),
-    State("guest_barcodes_inp", "value"),
+    Input("export_barcodes_btn", "n_clicks"),
+    prevent_initial_call=True,
 )
-def export_barcodes(trigger, guest_barcodes):
+def export_barcodes(trigger):
     if trigger is None:
         return no_update
 
-    types = ["users", "prods", "guests", "multipliers"]
+    types = ["users", "prods", "multipliers"]
+    temp_files = []
+    
     for type in types:
+        pdf_filename = f"{type[:-1]}_barcodes.pdf"
         generate_pdf(
             type=type,
-            pdf_filename=f"{type[:-1]}_barcodes.pdf",
-            number_of_guest_codes=guest_barcodes,
+            pdf_filename=pdf_filename,
         )
+        temp_files.append(pdf_filename)
+    
+    zip_buffer = io.BytesIO()
+    zip_filename = f"barcodes_{datetime.now().strftime('%d_%m_%Y_%H_%M_%S')}.zip"
 
-    return no_update
+    with zipfile.ZipFile(zip_buffer, 'w') as zipf:
+        for pdf in temp_files:
+            with open(pdf, 'rb') as f:
+                zipf.writestr(pdf, f.read())
+    
+    for pdf in temp_files:
+        if os.path.exists(pdf):
+            os.remove(pdf)
+
+    zip_buffer.seek(0)
+    return dcc.send_bytes(zip_buffer.getvalue(), filename=zip_filename)
 
 
 @callback(
@@ -309,6 +319,8 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
     Output("new_prod_modal", "is_open", allow_duplicate=True),
     Output({"index": ALL, "type": "user_input"}, "value", allow_duplicate=True),
     Output({"index": ALL, "type": "prod_input"}, "value", allow_duplicate=True),
+    Output("user_table", "data", allow_duplicate=True),
+    Output("prod_table", "data", allow_duplicate=True),
     Input("edit_modal_delete", "n_clicks"),
     Input("edit_modal_edit", "n_clicks"),
     State("edit_modal_row", "data"),
@@ -320,29 +332,55 @@ def edit_new_data_modals(delete, edit, table, barcode):
     if trigger == "edit_modal_delete" and barcode is not None:
         if table == "users":
             data = get_users()
+            other_table_data = no_update
         elif table == "prods":
             data = get_prods()
-        indecies = data[data["barcode"] == str(barcode)].index
-        data.drop(indecies, inplace=True)
+            other_table_data = no_update
+        barcode_mask = data["barcode"].astype(str) == str(barcode)
+        data = data[~barcode_mask].copy()
         upload_values(data, table)
-        return no_update, no_update, [no_update] * 4, [no_update] * 6
+        if table == "users":
+            return (
+                no_update,
+                no_update,
+                [no_update] * 5,
+                [no_update] * 6,
+                data.to_dict(orient="records"),
+                other_table_data,
+            )
+        return (
+            no_update,
+            no_update,
+            [no_update] * 5,
+            [no_update] * 6,
+            other_table_data,
+            data.to_dict(orient="records"),
+        )
     elif trigger == "edit_modal_edit" and barcode is not None:
         if table == "users":
             data = get_users()
-            row = data[data["barcode"] == str(barcode)]
+            row = data[data["barcode"].astype(str) == str(barcode)]
             if len(row) == 0:
-                return no_update, no_update, [no_update] * 4, [no_update] * 6
-            row = list(row.values[0])
-            return True, False, row, [no_update] * 6
+                return no_update, no_update, [no_update] * 5, [no_update] * 6, no_update, no_update
+            row_dict = row.iloc[0].to_dict()
+            is_guest = int(str(row_dict.get("is_guest", 0))) == 1
+            row_list = [
+                row_dict["barcode"],
+                row_dict["name"],
+                row_dict["rank"],
+                row_dict["team"],
+                [1] if is_guest else [],
+            ]
+            return True, False, row_list, [no_update] * 6, no_update, no_update
         if table == "prods":
             data = get_prods()
-            row = data[data["barcode"] == str(barcode)]
+            row = data[data["barcode"].astype(str) == str(barcode)]
             if len(row) == 0:
-                return no_update, no_update, [no_update] * 4, [no_update] * 6
+                return no_update, no_update, [no_update] * 5, [no_update] * 6, no_update, no_update
             row = list(row.values[0])
-            return False, True, [no_update] * 4, row
+            return False, True, [no_update] * 5, row, no_update, no_update
     else:
-        return no_update, no_update, [no_update] * 4, [no_update] * 6
+        return no_update, no_update, [no_update] * 5, [no_update] * 6, no_update, no_update
 
 
 @callback(

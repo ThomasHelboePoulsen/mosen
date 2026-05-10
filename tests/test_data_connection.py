@@ -62,7 +62,7 @@ class TestWrapperFunctions:
 
     def test_get_users_returns_correct_columns(self, test_db):
         # Arrange
-        expected_columns = ["barcode", "name", "rank", "team"]
+        expected_columns = ["barcode", "name", "rank", "team", "is_guest"]
         
         # Act
         result = get_users()

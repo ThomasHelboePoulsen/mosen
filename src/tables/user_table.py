@@ -59,21 +59,29 @@ def add_row(n_clicks, vals, ids, edit_barcode):
     if n_clicks is None:
         return no_update, no_update
     if n_clicks > 0:
-        if str(edit_barcode) in list(data["barcode"]):
-            row = data[data["barcode"] == str(edit_barcode)]
-            indecies = row.index
-            data.drop(indecies, inplace=True)
+        if edit_barcode is not None:
+            barcode_mask = data["barcode"].astype(str) == str(edit_barcode)
+            if barcode_mask.any():
+                data = data[~barcode_mask].copy()
 
-        new = pd.DataFrame([{c: vals[i] for i, c in enumerate(data.columns)}])
+        input_map = {id_obj["index"]: val for id_obj, val in zip(ids, vals)}        
+        new_row = {
+            "barcode": input_map.get("inp_barcode_user"),
+            "name": input_map.get("inp_name_user"),
+            "rank": input_map.get("inp_rank_user", "Unknown"),
+            "team": input_map.get("inp_team_user", "Unknown"),
+            "is_guest": 1 if input_map.get("inp_is_guest_user") else 0,
+        }
+        
+        new = pd.DataFrame([new_row])
         data = pd.concat([data, new])
 
     upload_values(data, "users")
 
     if edit_barcode is not None and int(edit_barcode) > 999:
         trans = get_trans()
-        trans.loc[trans["barcode_user"] == str(edit_barcode), "barcode_user"] = int(
-            vals[0]
-        )
+        trans_mask = trans["barcode_user"].astype(str) == str(edit_barcode)
+        trans.loc[trans_mask, "barcode_user"] = int(vals[0])
         upload_values(trans, "transactions")
 
     return data.to_dict(orient="records"), None

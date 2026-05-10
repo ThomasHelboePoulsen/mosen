@@ -9,6 +9,7 @@ class UserTable(BaseTable):
         "name": str,
         "rank": str,
         "team": str,
+        "is_guest": int,
     }
     
     create_sql = """
@@ -16,7 +17,8 @@ class UserTable(BaseTable):
             barcode varchar(255),
             name varchar(255),
             rank varchar(255),
-            team varchar(255)
+            team varchar(255),
+            is_guest INTEGER
         )
     """
     

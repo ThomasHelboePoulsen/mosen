@@ -28,6 +28,16 @@ for col in USER_COLS:
     )
     user_body.append(html.Hr())
 
+user_body.append(
+    dbc.Checklist(
+        id={"type": "user_input", "index": "inp_is_guest_user"},
+        options=[{"label": " Guest", "value": 1}],
+        value=[],
+        inline=True,
+    )
+)
+user_body.append(html.Hr())
+
 
 def new_user_modal():
     mdl = dbc.Modal(
@@ -246,25 +256,6 @@ def export_payments_modal():
         ],
         size="md",
         id="payments_modal",
-    )
-    return mdl
-
-
-def export_barcodes_mdl():
-    mdl = dbc.Modal(
-        [
-            dbc.ModalHeader("Export Barcodes"),
-            dbc.ModalBody(
-                [
-                    html.P("Number of guest barcodes:"),
-                    dbc.Input(id="guest_barcodes_inp", type="number", value=10),
-                ]
-            ),
-            dbc.ModalFooter(dbc.Button("Confirm", id="confirm_export_barcodes")),
-            dcc.Store(id="pdf_download"),
-        ],
-        size="md",
-        id="export_barcodes_modal",
     )
     return mdl
 

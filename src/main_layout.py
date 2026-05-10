@@ -20,7 +20,6 @@ from src.modals import (
     update_stock_modal,
     password_modal,
     export_payments_modal,
-    export_barcodes_mdl,
     bad_rows_mdl,
     edit_modal,
     reset_modal,
@@ -425,6 +424,7 @@ def settings_settings_layout():
                                     ],
                                     align="center",
                                 ),
+                                dcc.Download(id="pdf_download"),
                             ],
                             width=12,
                         ),
@@ -457,7 +457,6 @@ def settings_settings_layout():
                 fade=True,
                 duration=4000,
             ),
-            export_barcodes_mdl(),
             bad_rows_mdl(),
             reset_modal(),
         ]

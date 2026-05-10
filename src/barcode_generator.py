@@ -14,14 +14,6 @@ def get_codes_users():
     return numbers, names
 
 
-def get_codes_guests(number_of_guest_codes):
-    users = get_users()
-    first_code = max(map(int, users["barcode"])) + 1
-    numbers = list(map(str, range(first_code, first_code + number_of_guest_codes)))
-    names = [f"GUEST" for _ in numbers]
-    return numbers, names
-
-
 def get_codes_prods():
     users = get_prods()
     numbers = list(map(str, users["barcode"]))
@@ -36,14 +28,9 @@ def get_codes_mult():
     return numbers, names
 
 
-def generate_pdf(type, pdf_filename="output.pdf", number_of_guest_codes=0):
+def generate_pdf(type, pdf_filename="output.pdf"):
     if type == "users":
         numbers, names = get_codes_users()
-
-    elif type == "guests":
-        if number_of_guest_codes < 1:
-            return
-        numbers, names = get_codes_guests(number_of_guest_codes)
 
     elif type == "prods":
         numbers, names = get_codes_prods()
@@ -54,7 +41,7 @@ def generate_pdf(type, pdf_filename="output.pdf", number_of_guest_codes=0):
     else:
         return
 
-    if type == "users" or type == "guests":
+    if type == "users":
         x_0, y_0 = 50, 740
         width_nr, height_nr = 4, 11
         step_x, step_y = 130, 70
@@ -125,4 +112,4 @@ def generate_pdf(type, pdf_filename="output.pdf", number_of_guest_codes=0):
 
 if __name__ == "__main__":
     # Example usage
-    generate_pdf("multipliers", number_of_guest_codes=10)
+    generate_pdf("multipliers")
