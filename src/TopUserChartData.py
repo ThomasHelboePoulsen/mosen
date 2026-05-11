@@ -1,31 +1,15 @@
-import threading
+from src.container import Container
 from src.data_connection import Database,get_prods
 import plotly.express as px
 
 class TopUserChartData:
-    """Class to cache db callsand generate top user charts
+    """Class to cache db calls and generate top user charts"""
 
-    (This adds state to a stateless framework, but it works since there is only 1 client)"""
-    # region Singleton pattern
-    _instance = None
-    _lock = threading.Lock()
-
-
-    def __new__(cls):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._initialized = False
-        return cls._instance
 
     def __init__(self,x_top=10):
-        if self._initialized:
-            return
         self.all_user_products = None
         self.x_top = x_top
         self.refresh()
-        self._initialized = True
-    # endregion
 
     # region bussiness logic
     def refresh(self):
@@ -82,7 +66,7 @@ class TopUserChartData:
     __db_cols = [col for col,_ in __db_dtypes.items()]
     @classmethod
     def query_user_products(cls):
-        user_products = Database().get_query(cls.__db_query,cls.__db_cols)
+        user_products = Container.get(Database).get_query(cls.__db_query,cls.__db_cols)
         typed_user_products = user_products.astype(cls.__db_dtypes)
         return typed_user_products
     # endregion

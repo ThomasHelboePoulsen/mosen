@@ -3,10 +3,12 @@ import dash_bootstrap_components as dbc
 
 from src.container import Container
 from src.data_connection import Database
+from src.TopUserChartData import TopUserChartData
+
 
 # Initialize database container
-db = Database()
-Container.set(Database, db)
+Container.set(Database, Database())
+Container.set(TopUserChartData, TopUserChartData())
 
 # Create the Dash app
 app = dash.Dash(
