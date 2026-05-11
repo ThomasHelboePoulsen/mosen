@@ -154,9 +154,10 @@ class TestProductTableSet:
         # Act
         result, bad_rows = table.set(data)
         
-        # Assert
-        assert len(bad_rows) == 1
-        assert bad_rows[0]["barcode"] != 123  # Should be auto-corrected
+        # Assert - both duplicate rows marked bad, neither modified
+        assert len(bad_rows) == 2
+        assert bad_rows[0]["barcode"] == 123  # First duplicate unchanged
+        assert bad_rows[1]["barcode"] == 123  # Second duplicate unchanged
 
     def test_set_handles_empty_values(self, test_db):
         # Arrange
@@ -317,8 +318,8 @@ class TestProductTableSetAtomicity:
         ]
         result, bad_rows = table.set(new_data)
         
-        # Assert - database should still contain original data
-        assert len(bad_rows) == 1  # Duplicate detected
+        # Assert
+        assert len(bad_rows) == 2  # Both duplicate barcodes marked bad
         assert result == table.table_name
         current_state = table.get()
         assert len(current_state) == 1

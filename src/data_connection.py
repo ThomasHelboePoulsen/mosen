@@ -63,14 +63,14 @@ class Database:
     def get_query(self, query: str, columns: list):
         return self._connection.get_query(query, columns)
     
-    def validate_prod(self, row: dict, data: list) -> tuple[dict, bool]:
-        return self._product_table.validate(row, data)
+    def validate_prod(self, row: dict, data: list) -> bool:
+        return self._product_table.is_valid(row, data)
     
-    def validate_user(self, row: dict, data: list) -> tuple[dict, bool]:
-        return self._user_table.validate(row, data)
+    def validate_user(self, row: dict, data: list) -> bool:
+        return self._user_table.is_valid(row, data)
     
-    def validate_trans(self, row: dict, data: list) -> tuple[dict, bool]:
-        return self._transaction_table.validate(row, data)
+    def validate_trans(self, row: dict, data: list) -> bool:
+        return self._transaction_table.is_valid(row, data)
     
     def upload_values(self, data: list, table: str) -> tuple[str, list]:
         """Upload data to table."""

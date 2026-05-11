@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 
 from src.container import Container
+from src.tables.product import ProductTable
 from src.data_connection import (
     Database,
     get_prods,
@@ -124,11 +125,10 @@ class TestProductValidation:
         data = [row]
         
         # Act
-        validated_row, is_bad = db.validate_prod(row, data)
+        is_valid = db.validate_prod(row, data)
         
         # Assert
-        assert is_bad is False
-        assert validated_row["barcode"] == "123"
+        assert is_valid is True
 
     def test_validate_prod_rejects_invalid_barcode_length(self, test_db):
         # Arrange
@@ -144,14 +144,13 @@ class TestProductValidation:
         data = [row]
         
         # Act
-        validated_row, is_bad = db.validate_prod(row, data)
+        is_valid = db.validate_prod(row, data)
         
         # Assert
-        assert is_bad is True
-        assert validated_row["barcode"] != "12"  # Should be auto-generated
+        assert is_valid is False
 
     def test_validate_prod_rejects_missing_columns(self, test_db):
-        # Arrange
+        # Arrange - missing required columns: category, current_stock, initial_stock
         db = Container.get(Database)
         row = {
             "barcode": "123",
@@ -161,10 +160,10 @@ class TestProductValidation:
         data = [row]
         
         # Act
-        validated_row, is_bad = db.validate_prod(row, data)
+        is_valid = db.validate_prod(row, data)
         
         # Assert
-        assert is_bad is True
+        assert is_valid is False
 
 
 class TestUserValidation:
@@ -181,11 +180,10 @@ class TestUserValidation:
         data = [row]
         
         # Act
-        validated_row, is_bad = db.validate_user(row, data)
+        is_valid = db.validate_user(row, data)
         
         # Assert
-        assert is_bad is False
-        assert validated_row["barcode"] == "1000"
+        assert is_valid is True
 
     def test_validate_user_rejects_short_barcode(self, test_db):
         # Arrange
@@ -199,11 +197,10 @@ class TestUserValidation:
         data = [row]
         
         # Act
-        validated_row, is_bad = db.validate_user(row, data)
+        is_valid = db.validate_user(row, data)
         
         # Assert
-        assert is_bad is True
-        assert validated_row["barcode"] != "999"
+        assert is_valid is False
 
     def test_validate_user_rejects_long_barcode(self, test_db):
         # Arrange
@@ -217,10 +214,10 @@ class TestUserValidation:
         data = [row]
         
         # Act
-        validated_row, is_bad = db.validate_user(row, data)
+        is_valid = db.validate_user(row, data)
         
         # Assert
-        assert is_bad is True
+        assert is_valid is False
 
 
 class TestTransactionValidation:
@@ -235,10 +232,10 @@ class TestTransactionValidation:
         }
         
         # Act
-        validated_row, is_bad = db.validate_trans(trans_row, [trans_row])
+        is_valid = db.validate_trans(trans_row, [trans_row])
         
         # Assert
-        assert is_bad is True
+        assert is_valid is False
 
 
 class TestProductValidationWithDuplicates:
@@ -265,30 +262,26 @@ class TestProductValidationWithDuplicates:
         data = [existing_prod, duplicate_prod]
         
         # Act - validate the duplicate
-        validated_row, is_bad = db.validate_prod(duplicate_prod, data)
+        is_valid = db.validate_prod(duplicate_prod, data)
         
         # Assert - should auto-generate new barcode
-        assert is_bad is True
-        assert validated_row["barcode"] != "123"
-        assert len(str(validated_row["barcode"])) == 3  # Should be 3 digit
-        assert int(validated_row["barcode"]) > 123  # Should be > max existing
+        assert is_valid is False
 
-    def test_validate_prod_finds_gap_in_barcodes(self, test_db):
-        # Arrange - products with gaps in barcode range, new row has invalid length
+    def test_validate_prod_accepts_barcode_gaps(self, test_db):
+        # Arrange - products with gaps in barcode range
         db = Container.get(Database)
         data = [
             {"barcode": "100", "name": "A", "price": "1", "category": "X", "current_stock": "1", "initial_stock": "1"},
             {"barcode": "102", "name": "B", "price": "2", "category": "Y", "current_stock": "1", "initial_stock": "1"},
             {"barcode": "103", "name": "C", "price": "3", "category": "Z", "current_stock": "1", "initial_stock": "1"},
         ]
-        new_row = {"barcode": "99", "name": "D", "price": "4", "category": "W", "current_stock": "1", "initial_stock": "1"}  # Invalid: 2 digits
+        new_row = {"barcode": "110", "name": "D", "price": "4", "category": "W", "current_stock": "1", "initial_stock": "1"}  # Invalid: 2 digits
         
         # Act
-        validated_row, is_bad = db.validate_prod(new_row, data)
+        is_valid = db.validate_prod(new_row, data)
         
-        # Assert - should trigger gap finding and assign first valid 3-digit (101)
-        assert is_bad is True
-        assert int(validated_row["barcode"]) == 101
+        # Assert
+        assert is_valid is True
 
 
 class TestUserValidationWithDuplicates:
@@ -311,14 +304,12 @@ class TestUserValidationWithDuplicates:
         data = [existing_user, duplicate_user]
         
         # Act
-        validated_row, is_bad = db.validate_user(duplicate_user, data)
+        is_valid = db.validate_user(duplicate_user, data)
         
         # Assert
-        assert is_bad is True
-        assert validated_row["barcode"] != "1000"
-        assert int(validated_row["barcode"]) > 1000  # Should be > max existing
+        assert is_valid is False
 
-    def test_validate_user_finds_gap_in_barcodes(self, test_db):
+    def test_validate_user_finds_rejects_invalid_barcode(self, test_db):
         # Arrange - users with gaps in barcode range
         db = Container.get(Database)
         data = [
@@ -329,11 +320,10 @@ class TestUserValidationWithDuplicates:
         new_row = {"barcode": "999", "name": "D", "rank": "M", "team": "W"}
         
         # Act
-        validated_row, is_bad = db.validate_user(new_row, data)
+        is_valid = db.validate_user(new_row, data)
         
         # Assert - barcode too short, should assign first valid gap (1000 is taken, so 1001)
-        assert is_bad is True
-        assert int(validated_row["barcode"]) == 1001
+        assert is_valid is False
 
 
 class TestUploadValues:
@@ -356,11 +346,11 @@ class TestUploadValues:
         good_rows = []
         bad_rows = []
         for row in valid_prods:
-            validated_row, is_bad = db.validate_prod(row, valid_prods)
-            if not is_bad:
-                good_rows.append(validated_row)
+            is_valid = db.validate_prod(row, valid_prods)
+            if is_valid:
+                good_rows.append(row)
             else:
-                bad_rows.append(validated_row)
+                bad_rows.append(row)
         
         # Assert
         assert len(good_rows) == 1
@@ -384,11 +374,11 @@ class TestUploadValues:
         good_rows = []
         bad_rows = []
         for row in invalid_prods:
-            validated_row, is_bad = db.validate_prod(row, invalid_prods)
-            if not is_bad:
-                good_rows.append(validated_row)
+            is_valid = db.validate_prod(row, invalid_prods)
+            if is_valid:
+                good_rows.append(row)
             else:
-                bad_rows.append(validated_row)
+                bad_rows.append(row)
         
         # Assert
         assert len(good_rows) == 0

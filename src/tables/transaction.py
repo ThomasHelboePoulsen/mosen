@@ -1,14 +1,14 @@
-import pandas as pd
 from src.tables.base_table import BaseTable
+from src.tables.column import Column
 
 
 class TransactionTable(BaseTable):
     table_name = "transactions"
-    columns = {
-        "barcode_user": str,
-        "barcode_prod": str,
-        "timestamp": str,
-    }
+    columns = [
+        Column("barcode_user", str, required=True),
+        Column("barcode_prod", str, required=True),
+        Column("timestamp", str, required=True),
+    ]
     
     create_sql = """
         CREATE TABLE transactions (
@@ -23,27 +23,22 @@ class TransactionTable(BaseTable):
         self.user_table = user_table
         super().__init__(connection)
     
-    def validate(self, row: dict, all_rows: list) -> tuple[dict, bool]:
-        """Validate transaction: check that product and user barcodes exist."""
-        row, prod_bad = self._validate_product_exists(row)
-        row, user_bad = self._validate_user_exists(row)
-        bad = prod_bad or user_bad
-        return row, bad
+    def is_valid(self, row: dict, all_rows: list) -> bool:
+        """Validate transaction: standard checks + product/user existence."""
+        if not super().is_valid(row, all_rows):
+            return False
+        
+        if not self._validate_product_exists(row):
+            return False
+        
+        return self._validate_user_exists(row)
     
-    def _validate_product_exists(self, row: dict) -> tuple[dict, bool]:
+    def _validate_product_exists(self, row: dict) -> bool:
         """Check that barcode_prod exists in products table."""
-        bad = False
         prods = self.product_table.get()
-        
-        if str(row["barcode_prod"]) not in list(prods["barcode"]):
-            bad = True
-        return row, bad
+        return str(row["barcode_prod"]) in list(prods["barcode"])
     
-    def _validate_user_exists(self, row: dict) -> tuple[dict, bool]:
+    def _validate_user_exists(self, row: dict) -> bool:
         """Check that barcode_user exists in users table."""
-        bad = False
         users = self.user_table.get()
-        
-        if str(row["barcode_user"]) not in list(users["barcode"]):
-            bad = True
-        return row, bad
+        return str(row["barcode_user"]) in list(users["barcode"])
