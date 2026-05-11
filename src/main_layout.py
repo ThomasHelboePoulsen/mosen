@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import dash_bootstrap_components as dbc
 import os
+from src.container import Container
 from src.TopUserChartData import TopUserChartData
 from src.tables.prod_table import get_waste_table
 from src.tables.trans_table import (
@@ -506,7 +507,7 @@ def settings_mode_func():
     )
 
 def top_user_chart_modal():
-    data = TopUserChartData()
+    data = Container.get(TopUserChartData)
     return dbc.Modal(
         [
             dbc.ModalHeader(html.H1("Top Buyers")),
@@ -706,7 +707,7 @@ def open_settings(trigger, trigger_enter, password, error_queue):
 )
 def open_report(trigger):
     if trigger:
-        data = TopUserChartData()
+        data = Container.get(TopUserChartData)
         data.refresh()
         return True, data.all_products
     return no_update, no_update
@@ -719,7 +720,7 @@ def open_report(trigger):
 def update_top_user_chart(is_open,selected_traces):
     if not is_open:
         return no_update
-    fig = TopUserChartData().get_chart(selected_traces)
+    fig = Container.get(TopUserChartData).get_chart(selected_traces)
     fig.update_layout(
         legend_itemclick=False,
         legend_itemdoubleclick=False,
@@ -747,7 +748,7 @@ def toggle_visibility(n, current_style):
 def toggle_checkboxes(n_clicks, current_values):
     if not n_clicks:
         return no_update
-    product_names = TopUserChartData().all_products
+    product_names = Container.get(TopUserChartData).all_products
 
     if set(product_names).issubset(current_values):
         return []
