@@ -8,6 +8,8 @@ from src.data_connection import (
     update_values,
 )
 from src.tables.trans_table import get_currently_sold
+from src.container import Container
+from src.data_connection import Database
 
 
 def calculate_waste():
@@ -84,24 +86,30 @@ def enable_confirm(inps, invalid_barcode):
     Input("confirm_prod", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
     State({"type": "prod_input", "index": ALL}, "value"),
-    State({"type": "prod_input", "index": ALL}, "id"),
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
-def add_row(n_clicks, stock_trigger, vals, ids, edit_barcode):
-    data = get_prods()
+def add_row(n_clicks, stock_trigger, vals, edit_barcode):
+    db = Container.get(Database)
+    table = db._product_table
+    
     if n_clicks is None:
         return no_update, no_update
     if n_clicks > 0:
-        if str(edit_barcode) in list(data["barcode"]):
-            row = data[data["barcode"] == str(edit_barcode)]
-            indecies = row.index
-            data.drop(indecies, inplace=True)
+        data = table.get()
+        
+        if edit_barcode is not None and str(edit_barcode) in list(data["barcode"]):
+            barcode_mask = data["barcode"].astype(str) == str(edit_barcode)
+            data = data[~barcode_mask].copy()
 
-        new = pd.DataFrame([{c: vals[i] for i, c in enumerate(data.columns)}])
-        data = pd.concat([data, new])
-
-    upload_values(data, "prods")
+        new_row = {col.name: val for col, val in zip(table.columns, vals)}
+        
+        all_data_records = data.to_dict('records')
+        if not table.is_valid_single(new_row, all_data_records):
+            return no_update, no_update
+        
+        data = pd.concat([data, pd.DataFrame([new_row])])
+        upload_values(data, "prods")
 
     if edit_barcode is not None and int(edit_barcode) < 999:
         trans = get_trans()

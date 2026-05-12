@@ -13,6 +13,8 @@ from src.data_connection import (
 from src.tables.trans_table import get_income
 from src.barcode_generator import generate_pdf
 from src.error_handler import append_error
+from src.container import Container
+from src.data_connection import Database
 
 import base64
 import io
@@ -328,6 +330,10 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
     prevent_initial_call=True,
 )
 def edit_new_data_modals(delete, edit, table, barcode):
+    db = Container.get(Database)
+    user_col_count = len(db._user_table.columns)
+    prod_col_count = len(db._product_table.columns)
+    
     trigger = ctx.triggered_id
     if trigger == "edit_modal_delete" and barcode is not None:
         if table == "users":
@@ -343,16 +349,16 @@ def edit_new_data_modals(delete, edit, table, barcode):
             return (
                 no_update,
                 no_update,
-                [no_update] * 5,
-                [no_update] * 6,
+                [no_update] * user_col_count,
+                [no_update] * prod_col_count,
                 data.to_dict(orient="records"),
                 other_table_data,
             )
         return (
             no_update,
             no_update,
-            [no_update] * 5,
-            [no_update] * 6,
+            [no_update] * user_col_count,
+            [no_update] * prod_col_count,
             other_table_data,
             data.to_dict(orient="records"),
         )
@@ -361,7 +367,7 @@ def edit_new_data_modals(delete, edit, table, barcode):
             data = get_users()
             row = data[data["barcode"].astype(str) == str(barcode)]
             if len(row) == 0:
-                return no_update, no_update, [no_update] * 5, [no_update] * 6, no_update, no_update
+                return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
             row_dict = row.iloc[0].to_dict()
             is_guest = int(str(row_dict.get("is_guest", 0))) == 1
             row_list = [
@@ -371,16 +377,16 @@ def edit_new_data_modals(delete, edit, table, barcode):
                 row_dict["team"],
                 [1] if is_guest else [],
             ]
-            return True, False, row_list, [no_update] * 6, no_update, no_update
+            return True, False, row_list, [no_update] * prod_col_count, no_update, no_update
         if table == "prods":
             data = get_prods()
             row = data[data["barcode"].astype(str) == str(barcode)]
             if len(row) == 0:
-                return no_update, no_update, [no_update] * 5, [no_update] * 6, no_update, no_update
+                return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
             row = list(row.values[0])
-            return False, True, [no_update] * 5, row, no_update, no_update
+            return False, True, [no_update] * user_col_count, row, no_update, no_update
     else:
-        return no_update, no_update, [no_update] * 5, [no_update] * 6, no_update, no_update
+        return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
 
 
 @callback(

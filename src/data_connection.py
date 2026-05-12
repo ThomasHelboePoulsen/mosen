@@ -64,13 +64,16 @@ class Database:
         return self._connection.get_query(query, columns)
     
     def validate_prod(self, row: dict, data: list) -> bool:
-        return self._product_table.is_valid(row, data)
+        """Validate product (batch mode: data includes row being tested)."""
+        return self._product_table.is_valid_batch(row, data)
     
     def validate_user(self, row: dict, data: list) -> bool:
-        return self._user_table.is_valid(row, data)
+        """Validate user (batch mode: data includes row being tested)."""
+        return self._user_table.is_valid_batch(row, data)
     
     def validate_trans(self, row: dict, data: list) -> bool:
-        return self._transaction_table.is_valid(row, data)
+        """Validate transaction (batch mode: data includes row being tested)."""
+        return self._transaction_table.is_valid_batch(row, data)
     
     def upload_values(self, data: list, table: str) -> tuple[str, list]:
         """Upload data to table."""

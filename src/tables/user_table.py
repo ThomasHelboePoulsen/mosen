@@ -1,6 +1,9 @@
 import pandas as pd
 from dash import callback, Output, Input, State, html, ctx, ALL, no_update
 from src.data_connection import upload_values, get_users, get_trans
+from src.container import Container
+from src.data_connection import Database
+    
 
 
 def init():
@@ -50,33 +53,32 @@ def enable_confirm(inps, invalid_barcode):
     Output("edit_input", "value", allow_duplicate=True),
     Input("confirm_user", "n_clicks"),
     State({"type": "user_input", "index": ALL}, "value"),
-    State({"type": "user_input", "index": ALL}, "id"),
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
-def add_row(n_clicks, vals, ids, edit_barcode):
-    data = get_users()
+def add_row(n_clicks, vals, edit_barcode):
+    db = Container.get(Database)
+    table = db._user_table
+    
     if n_clicks is None:
         return no_update, no_update
     if n_clicks > 0:
+        data = table.get()
+        
         if edit_barcode is not None:
             barcode_mask = data["barcode"].astype(str) == str(edit_barcode)
             if barcode_mask.any():
                 data = data[~barcode_mask].copy()
 
-        input_map = {id_obj["index"]: val for id_obj, val in zip(ids, vals)}        
-        new_row = {
-            "barcode": input_map.get("inp_barcode_user"),
-            "name": input_map.get("inp_name_user"),
-            "rank": input_map.get("inp_rank_user", "Unknown"),
-            "team": input_map.get("inp_team_user", "Unknown"),
-            "is_guest": 1 if input_map.get("inp_is_guest_user") else 0,
-        }
+        new_row = {col.name: val for col, val in zip(table.columns, vals)}        
+        new_row["is_guest"] = 1 if new_row.get("is_guest") else 0
         
-        new = pd.DataFrame([new_row])
-        data = pd.concat([data, new])
-
-    upload_values(data, "users")
+        all_data_records = data.to_dict('records')
+        if not table.is_valid_single(new_row, all_data_records):
+            return no_update, no_update
+        
+        data = pd.concat([data, pd.DataFrame([new_row])])
+        upload_values(data, "users")
 
     if edit_barcode is not None and int(edit_barcode) > 999:
         trans = get_trans()

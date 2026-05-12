@@ -57,9 +57,8 @@ class BaseTable(ABC):
             con.commit()
             con.close()
     
-    def is_valid(self, row: dict, all_rows: list) -> bool:
-        """Validate row: columns + required fields not empty + pk duplicates + barcode ranges.
-        Returns True if valid, False if invalid."""
+    def is_valid_batch(self, row: dict, all_rows: list) -> bool:
+        """Validate row against all_rows (includes row being tested)."""
         if not self.validate_columns(row):
             return False
         
@@ -78,6 +77,12 @@ class BaseTable(ABC):
                 return False
 
         return True
+    
+    def is_valid_single(self, row: dict, all_other_rows: list) -> bool:
+        """Validate single row against other existing rows.
+        Used for single inserts: all_other_rows does NOT include the row being tested."""
+        all_rows_with_new = all_other_rows + [row]
+        return self.is_valid_batch(row, all_rows_with_new)
     
     def get(self) -> pd.DataFrame:
         """Return all rows as strings."""
@@ -115,7 +120,7 @@ class BaseTable(ABC):
         
         for row in data:
             self._fill_optional_defaults(row)            
-            is_valid = self.is_valid(row, data)
+            is_valid = self.is_valid_batch(row, data)
             
             if not is_valid:
                 bad_rows.append(row)

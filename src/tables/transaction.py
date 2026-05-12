@@ -23,9 +23,9 @@ class TransactionTable(BaseTable):
         self.user_table = user_table
         super().__init__(connection)
     
-    def is_valid(self, row: dict, all_rows: list) -> bool:
+    def is_valid_batch(self, row: dict, all_rows: list) -> bool:
         """Validate transaction: standard checks + product/user existence."""
-        if not super().is_valid(row, all_rows):
+        if not super().is_valid_batch(row, all_rows):
             return False
         
         if not self._validate_product_exists(row):
