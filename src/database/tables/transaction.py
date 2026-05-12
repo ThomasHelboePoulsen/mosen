@@ -1,5 +1,5 @@
-from src.tables.base_table import BaseTable
-from src.tables.column import Column
+from src.database.tables.base_table import BaseTable
+from src.database.tables.column import Column
 
 
 class TransactionTable(BaseTable):

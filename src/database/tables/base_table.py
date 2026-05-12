@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import pandas as pd
-from src.connection import Connection
-from src.tables.column import Column,BarcodeColumn
+from src.database.connection import Connection
+from src.database.tables.column import Column, BarcodeColumn
+
 
 class BaseTable(ABC):
     """Abstract base for all table operations."""

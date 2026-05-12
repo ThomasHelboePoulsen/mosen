@@ -1,8 +1,8 @@
 import pytest
 import pandas as pd
 from src.container import Container
-from src.data_connection import Database
-from src.tables.product import ProductTable
+from src.database.data_connection import Database
+from src.database.tables.product import ProductTable
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 from dash import Output, Input, State, callback, ctx, no_update, html, ALL, MATCH, dcc
 import pandas as pd
 import plotly.express as px
-from src.data_connection import (
+from src.database.data_connection import (
     get_prods,
     get_trans,
     get_users,
@@ -10,11 +10,11 @@ from src.data_connection import (
     reset_all_tables,
     get_waste,
 )
-from src.tables.trans_table import get_income
+from src.analytics.trans_calculations import get_income
 from src.barcode_generator import generate_pdf
 from src.error_handler import append_error
 from src.container import Container
-from src.data_connection import Database
+from src.database.data_connection import Database
 
 import base64
 import io

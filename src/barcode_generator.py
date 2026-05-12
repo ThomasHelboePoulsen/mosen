@@ -4,7 +4,7 @@ from reportlab.pdfgen import canvas
 from barcode import Code128
 from barcode.writer import ImageWriter
 
-from src.data_connection import get_users, get_prods
+from src.database.data_connection import get_users, get_prods
 
 
 def get_codes_users():

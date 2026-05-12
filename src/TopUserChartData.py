@@ -1,5 +1,5 @@
 from src.container import Container
-from src.data_connection import Database,get_prods
+from src.database.data_connection import Database, get_prods
 import plotly.express as px
 
 class TopUserChartData:

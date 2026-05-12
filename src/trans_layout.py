@@ -5,7 +5,7 @@ import plotly.express as px
 from datetime import datetime
 from src.components import get_barcode, get_table
 from src.error_handler import append_error
-from src.data_connection import (
+from src.database.data_connection import (
     get_prods,
     get_trans,
     get_users,

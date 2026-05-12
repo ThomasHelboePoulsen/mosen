@@ -2,7 +2,7 @@ import dash
 import dash_bootstrap_components as dbc
 
 from src.container import Container
-from src.data_connection import Database
+from src.database.data_connection import Database
 from src.TopUserChartData import TopUserChartData
 
 

@@ -2,8 +2,8 @@ import pytest
 import pandas as pd
 
 from src.container import Container
-from src.tables.product import ProductTable
-from src.data_connection import (
+from src.database.tables.product import ProductTable
+from src.database.data_connection import (
     Database,
     get_prods,
     get_trans,

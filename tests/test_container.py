@@ -1,7 +1,7 @@
 import pytest
 
 from src.container import Container
-from src.data_connection import Database
+from src.database.data_connection import Database
 
 
 class TestContainer:

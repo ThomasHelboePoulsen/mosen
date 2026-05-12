@@ -2,10 +2,10 @@
 import pytest
 import pandas as pd
 from src.container import Container
-from src.data_connection import Database
-from src.tables.column import Column
-from src.tables.product import ProductTable
-from src.tables.user import UserTable
+from src.database.data_connection import Database
+from src.database.tables.column import Column
+from src.database.tables.product import ProductTable
+from src.database.tables.user import UserTable
 
 
 @pytest.fixture
@@ -283,7 +283,7 @@ class TestCompositeKeyLogic:
     @pytest.fixture
     def composite_table(self, test_db):
         """Create a test table with composite primary key (col1, col2)."""
-        from src.tables.base_table import BaseTable
+        from src.database.tables.base_table import BaseTable
         
         class OrderLineTable(BaseTable):
             table_name = "order_lines"

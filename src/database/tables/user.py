@@ -1,5 +1,5 @@
-from src.tables.base_table import BaseTable
-from src.tables.column import Column,BarcodeColumn
+from src.database.tables.base_table import BaseTable
+from src.database.tables.column import Column, BarcodeColumn
 
 
 class UserTable(BaseTable):
@@ -21,4 +21,3 @@ class UserTable(BaseTable):
             is_guest INTEGER
         )
     """
-    

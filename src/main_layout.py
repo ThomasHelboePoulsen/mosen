@@ -8,8 +8,8 @@ import dash_bootstrap_components as dbc
 import os
 from src.container import Container
 from src.TopUserChartData import TopUserChartData
-from src.tables.prod_table import get_waste_table
-from src.tables.trans_table import (
+from src.analytics.product_calculations import get_waste_table
+from src.analytics.trans_calculations import (
     get_revenue,
     get_income,
     get_total_income,
@@ -30,7 +30,7 @@ from src.trans_layout import trans_modal
 from src.error_handler import get_error_view_components,append_error
 from src.main_page_callbacks import create_overview
 from src.components import get_upload, get_table
-from src.data_connection import (
+from src.database.data_connection import (
     get_prods,
     get_trans,
     get_users,
@@ -39,7 +39,7 @@ from src.data_connection import (
     get_waste,
     get_backup_time,
 )
-from src.tables.user_table import init
+from src.tables.user_callbacks import init
 
 users_init = init()
 
