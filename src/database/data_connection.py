@@ -3,6 +3,7 @@ from datetime import datetime
 import keyboard as k
 
 from src.container import Container
+from src.database.tables.base_table import BaseTable
 from src.database.tables.product import ProductTable
 from src.database.tables.settings import SettingsTable
 from src.database.tables.temporary import TemporaryTable
@@ -69,20 +70,14 @@ class Database:
         """Validate transaction (batch mode: data includes row being tested)."""
         return self._transaction_table.is_valid_batch(row, data)
     
+    def get_table(self,table_name: str) -> BaseTable:
+        if table_name not in self.tables:
+            raise ValueError(f"Unknown table: {table_name}")
+        return self.tables[table_name]
+    
     def upload_values(self, data: list, table: str) -> tuple[str, list]:
         """Upload data to table."""
-        if table == "prods":
-            return self._product_table.set(data)
-        elif table == "users":
-            return self._user_table.set(data)
-        elif table == "transactions":
-            return self._transaction_table.set(data)
-        elif table == "temporary":
-            return self._temporary_table.set(data)
-        elif table == "settings":
-            return self._settings_table.set(data)
-        else:
-            raise ValueError(f"Unknown table: {table}")
+        return self.get_table(table).set(data)
 
     @property
     def prods(self):
@@ -129,16 +124,9 @@ def update_current_trans(data: pd.DataFrame):
 
 def reset_table(table: str):
     db = Container.get(Database)
-    table_map = {
-        "users": db._user_table,
-        "prods": db._product_table,
-        "transactions": db._transaction_table,
-        "temporary": db._temporary_table,
-        "settings": db._settings_table,
-    }
-    if table not in table_map:
+    if table not in db.tables:
         raise ValueError(f"Unknown table: {table}")
-    table_map[table].set([])
+    db.get_table(table).set([])
     print(f"Reset on {table}")
 
 def reset_current_trans():
@@ -149,16 +137,6 @@ def upload_values(data: list, table: str):
 
 def add_transactions(trans_df):
     return Container.get(Database)._transaction_table.append(trans_df)
-
-def check_db(data, con, cur):
-    if len(data) == 0:
-        out = cur.execute("SELECT * FROM settings")
-        cur.execute("INSERT INTO settings VALUES ('OLProgram', 'True', '0', '10')")
-        con.commit()
-        print("updated database")
-        return False
-    else:
-        return True
 
 def get_password():
     db = Container.get(Database)
@@ -201,7 +179,6 @@ def reset_all_tables():
     for table in ["users", "prods", "transactions", "temporary", "settings"]:
         cur.execute(f"DROP TABLE {table}")
         con.commit()
-    db = Database()
-    Container.set(Database, db)
+    Container.set(Database, Database())
     k.unhook_all()
     k.send("alt+f4")

@@ -17,16 +17,16 @@ def init():
     Input("new_user_btn", "n_clicks"),
     Input("confirm_user", "n_clicks"),
     Input("cancel_user", "n_clicks"),
-    State("user_table", "data"),
     prevent_initial_call=True,
 )
-def open_user_modal(new_user, confirm, cancel, data):
+def open_user_modal(new_user, confirm, cancel):
     trigger = ctx.triggered_id
     if trigger is None:
         return no_update, no_update
 
     try:
-        barcode = int(max(pd.DataFrame(data)["barcode"])) + 1
+        table_data = Container.get(Database)._user_table.get_typed()
+        barcode = max(table_data["barcode"]) + 1
     except KeyError:
         barcode = 1000
     if trigger == "new_user_btn":
@@ -86,7 +86,7 @@ def add_row(n_clicks, vals, edit_barcode):
         trans.loc[trans_mask, "barcode_user"] = int(vals[0])
         upload_values(trans, "transactions")
 
-    return data.to_dict(orient="records"), None
+    return table.get().to_dict(orient="records"), None
 
 
 @callback(

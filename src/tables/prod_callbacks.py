@@ -19,12 +19,12 @@ from src.database.data_connection import Database
     Input("new_prod_btn", "n_clicks"),
     Input("confirm_prod", "n_clicks"),
     Input("cancel_prod", "n_clicks"),
-    State("prod_table", "data"),
     prevent_initial_call=True,
 )
-def open_prod_modal(new_prod, confirm, cancel, data):
+def open_prod_modal(new_prod, confirm, cancel):
     try:
-        barcode = max(pd.DataFrame(data)["barcode"]) + 1
+        table_data = Container.get(Database)._product_table.get_typed()
+        barcode = max(table_data["barcode"]) + 1
     except:
         barcode = 101
     trigger = ctx.triggered_id
@@ -85,7 +85,7 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
         )
         upload_values(trans, "transactions")
 
-    return data.to_dict(orient="records"), None
+    return table.get().to_dict(orient="records"), None
 
 
 @callback(
