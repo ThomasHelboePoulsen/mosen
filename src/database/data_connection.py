@@ -53,10 +53,12 @@ class Database:
         con.close()
     
     def _table_exists(self, table_name: str) -> bool:
-        return self._connection.table_exists(table_name)
+        with self._connection._lock:
+            return self._connection.table_exists(table_name)
     
     def get_query(self, query: str, columns: list):
-        return self._connection.get_query(query, columns)
+        with self._connection._lock:
+            return self._connection.get_query(query, columns)
     
     def validate_prod(self, row: dict, data: list) -> bool:
         """Validate product (batch mode: data includes row being tested)."""

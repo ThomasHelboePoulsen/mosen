@@ -7,7 +7,7 @@ import plotly.express as px
 import dash_bootstrap_components as dbc
 import os
 from src.container import Container
-from src.TopUserChartData import TopUserChartData
+from src.analytics.TopUserChartData import TopUserChartData
 from src.analytics.product_calculations import get_waste_table
 from src.analytics.trans_calculations import (
     get_revenue,
@@ -339,6 +339,34 @@ def settings_settings_layout():
                         dbc.Col(
                             dbc.Row(
                                 [
+                                    dbc.Col(html.P("Toggle top user chart"), width=4),
+                                    dbc.Col(
+                                        dbc.Switch(
+                                            id="toggle_top_user_chart",
+                                            value=False,
+                                            className="d-grid gap-2 col-10 mx-auto",
+                                        ),
+                                    ),
+                                ],
+                                align="center",
+                            ),
+                            width=12,
+                        ),
+                        dbc.Tooltip(
+                            """Forged in response to injustice.
+
+After the Drinker of Cocio claimed his second consecutive OPtur title, the evil Beverage KABS refused to verify his glory in the database.
+
+Now, with the sacred hat-trick complete, this feature ensures that the champions of the Swamp Machine may forever be found, ranked, and remembered.
+
+WARNING: Do not use this on intro trips. It shows individual user data, so only use it for prep trips or similar events.""",
+                            className="wide-tooltip",
+                            target="toggle_top_user_chart",
+                        ),
+                        html.Hr(),
+                        dbc.Col(
+                            dbc.Row(
+                                [
                                     dbc.Col(html.P("Backup Timer"), width=4),
                                     dbc.Col(
                                         dbc.Input(
@@ -397,7 +425,7 @@ def settings_settings_layout():
                                                 id="export_barcodes_btn",
                                                 className="d-grid gap-2 col-10 mx-auto",
                                             ),
-                                            width=3,
+                                            width=4,
                                         ),
                                         dbc.Col(
                                             dbc.Button(
@@ -406,7 +434,7 @@ def settings_settings_layout():
                                                 color="danger",
                                                 className="d-grid gap-2 col-10 mx-auto",
                                             ),
-                                            width=3,
+                                            width=4,
                                         ),
                                         dbc.Col(
                                             dbc.Button(
@@ -414,15 +442,7 @@ def settings_settings_layout():
                                                 id="close_app_btn",
                                                 className="d-grid gap-2 col-10 mx-auto",
                                             ),
-                                            width=3,
-                                        ),
-                                        dbc.Col(
-                                            dbc.Button(
-                                                "Toggle top user chart",
-                                                id="toggle_top_user_chart",
-                                                className="d-grid gap-2 col-10 mx-auto",
-                                            ),
-                                            width=3,
+                                            width=4,
                                         ),
                                     ],
                                     align="center",
@@ -732,15 +752,14 @@ def update_top_user_chart(is_open,selected_traces):
 
 @callback(
     Output("open_top_user_chart_wrapper", "style"),
-    Input("toggle_top_user_chart", "n_clicks"),
+    Input("toggle_top_user_chart", "value"),
     State("open_top_user_chart_wrapper", "style"),
     prevent_initial_call=True
 )
-def toggle_visibility(n, current_style):
-    if current_style and current_style.get("visibility") == "hidden":
+def toggle_visibility(value, current_style):
+    if value:
         return {"visibility": "visible"}
-    else:
-        return {"visibility": "hidden"}
+    return {"visibility": "hidden"}
 
 @app.callback(
     Output('products_selector', 'value'),

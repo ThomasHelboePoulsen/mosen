@@ -3,7 +3,7 @@ import dash_bootstrap_components as dbc
 
 from src.container import Container
 from src.database.data_connection import Database
-from src.TopUserChartData import TopUserChartData
+from src.analytics.TopUserChartData import TopUserChartData
 
 
 # Initialize database container
