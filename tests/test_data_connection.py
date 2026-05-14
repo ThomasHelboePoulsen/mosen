@@ -9,6 +9,8 @@ from src.database.data_connection import (
     get_trans,
     get_users,
     get_current_trans,
+    update_current_trans,
+    add_transactions,
     upload_values,
     get_password,
     get_backup_time,
@@ -421,6 +423,39 @@ class TestUploadValues:
         # Assert
         assert result in ["success", "prods"]
 
+    def test_add_transactions_rejects_invalid_rows(self, test_db):
+        # Arrange
+        invalid_rows = pd.DataFrame([
+            {
+                "barcode_user": "1000",
+                "barcode_prod": "999",
+                "timestamp": "2024-01-01 12:00:00",
+            }
+        ])
+
+        # Act
+        result, bad_rows = add_transactions(invalid_rows)
+
+        # Assert
+        assert result == "transactions"
+        assert len(bad_rows) == 1
+        assert len(get_trans()) == 0
+
+    def test_product_append_rejects_duplicate_rows_in_same_batch(self, test_db):
+        # Arrange
+        duplicate_rows = pd.DataFrame([
+            {"barcode": "123", "name": "Beer", "price": "5.00", "category": "Beverage", "current_stock": "10", "initial_stock": "20"},
+            {"barcode": "123", "name": "Beer Clone", "price": "6.00", "category": "Beverage", "current_stock": "5", "initial_stock": "15"},
+        ])
+
+        # Act
+        result, bad_rows = Container.get(Database)._product_table.append(duplicate_rows)
+
+        # Assert
+        assert result == "prods"
+        assert len(bad_rows) == 2
+        assert len(get_prods()) == 0
+
 
 class TestSettingsOperations:
 
@@ -451,3 +486,73 @@ class TestSettingsOperations:
         
         # Assert
         assert True
+
+    def test_settings_round_trip_through_cache(self, test_db):
+        # Arrange
+        
+        # Act
+        update_values(password="alpha", show_bill=False, waste=12, backup_time=42)
+
+        # Assert
+        assert get_password() == "alpha"
+        assert get_show_bill() is False
+        assert get_waste() == 12
+        assert get_backup_time() == 42
+
+    def test_current_trans_round_trip_through_cache(self, test_db):
+        # Arrange
+        current = pd.DataFrame([
+            {"barcode_prod": "123", "name": "Beer"},
+        ])
+
+        # Act
+        update_current_trans(current)
+        result = get_current_trans()
+
+        # Assert
+        assert len(result) == 1
+        assert list(result["barcode_prod"])[0] == "123"
+
+    def test_add_transactions_appends_and_refreshes_cache(self, test_db):
+        # Arrange
+        upload_values(
+            [
+                {
+                    "barcode": "1000",
+                    "name": "John",
+                    "rank": "Member",
+                    "team": "A",
+                }
+            ],
+            "users",
+        )
+        upload_values(
+            [
+                {
+                    "barcode": "123",
+                    "name": "Beer",
+                    "price": "5.00",
+                    "category": "Beverage",
+                    "current_stock": "10",
+                    "initial_stock": "20",
+                }
+            ],
+            "prods",
+        )
+
+        from src.database.data_connection import add_transactions
+
+        new_rows = pd.DataFrame([
+            {
+                "barcode_user": "1000",
+                "barcode_prod": "123",
+                "timestamp": "2024-01-01 12:00:00",
+            }
+        ])
+
+        # Act
+        add_transactions(new_rows)
+
+        # Assert
+        result = get_trans()
+        assert len(result) == 1

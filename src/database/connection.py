@@ -1,21 +1,21 @@
 """Pure SQLite connection wrapper. No table knowledge."""
 import os
 import sqlite3
+from threading import RLock
 import pandas as pd
 
 
 class Connection:
-    """Low-level SQLite connection provider. It creates new connections every time to support concurrent access as used by Dash"""
+    """Low-level SQLite connection provider. It creates new connections every time to support concurrent access as used by Dash
+    Callers need to manage the lock themselves. This is currently done by tables, if you use this directly you risk data loss"""
     
     def __init__(self, data_file: str = "beerbase.db"):
         self.data_file = data_file
-    
+        self._lock = RLock()
+       
     def connect(self):
         """Establish database connection and return (con, cur)."""
-        if self.data_file != ":memory:" and not os.path.exists(self.data_file):
-            open(self.data_file, "w")
-        
-        con = sqlite3.connect(self.data_file)
+        con = sqlite3.connect(self.data_file, timeout=5)
         return con, con.cursor()
 
     

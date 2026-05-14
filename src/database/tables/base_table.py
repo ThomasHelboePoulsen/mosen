@@ -13,7 +13,13 @@ class BaseTable(ABC):
     
     def __init__(self, connection: Connection):
         self.connection = connection
-        self._ensure_table_exists()
+        self._cache = self._empty_cache()
+        with self.connection._lock:
+            self._ensure_table_exists()
+            self._refresh_cache()
+
+    def _empty_cache(self) -> pd.DataFrame:
+        return pd.DataFrame({col.name: pd.Series(dtype="str") for col in self.columns})
     
     @property
     def primary_keys(self) -> list:
@@ -57,6 +63,11 @@ class BaseTable(ABC):
             con.execute(self.create_sql)
             con.commit()
             con.close()
+
+    def _refresh_cache(self):
+        query = f"SELECT * FROM {self.table_name}"
+        col_names = [col.name for col in self.columns]
+        self._cache = self.connection.get_query(query, col_names)
     
     def is_valid_batch(self, row: dict, all_rows: list) -> bool:
         """Validate row against all_rows (includes row being tested)."""
@@ -87,9 +98,8 @@ class BaseTable(ABC):
     
     def get(self) -> pd.DataFrame:
         """Return all rows as strings."""
-        query = f"SELECT * FROM {self.table_name}"
-        col_names = [col.name for col in self.columns]
-        return self.connection.get_query(query, col_names)
+        with self.connection._lock:
+            return self._cache.copy()
     
     def get_typed(self) -> pd.DataFrame:
         """Return all rows with correct Python types."""
@@ -114,33 +124,81 @@ class BaseTable(ABC):
         """Replace mode: fill optional defaults, validate, delete all, insert."""
         if isinstance(data, pd.DataFrame):
             data = data.to_dict(orient="records")
-        
-        con, cur = self.connection.connect()
-        bad_rows = []
-        good_rows = []
-        
-        for row in data:
-            self._fill_optional_defaults(row)            
-            is_valid = self.is_valid_batch(row, data)
-            
-            if not is_valid:
-                bad_rows.append(row)
-            else:
-                good_rows.append(row)
-        
-        if bad_rows:
-            con.close()
-            return self.table_name, bad_rows
-        
-        cur.execute(f"DELETE FROM {self.table_name}")
-        if good_rows:
-            cols = ", ".join(good_rows[0].keys())
-            placeholders = ", ".join(["?" for _ in good_rows[0].keys()])
-            cur.executemany(f"INSERT INTO {self.table_name} ({cols}) VALUES ({placeholders})", 
-                           [list(row.values()) for row in good_rows])
-        
-        con.commit()
-        con.close()
-        
-        return "success", bad_rows
+        with self.connection._lock:
+            bad_rows = []
+            good_rows = []
+
+            for row in data:
+                self._fill_optional_defaults(row)
+                is_valid = self.is_valid_batch(row, data)
+
+                if not is_valid:
+                    bad_rows.append(row)
+                else:
+                    good_rows.append(row)
+
+            if bad_rows:
+                return self.table_name, bad_rows
+
+            con, cur = self.connection.connect()
+            try:
+                cur.execute(f"DELETE FROM {self.table_name}")
+                if good_rows:
+                    cols = ", ".join(good_rows[0].keys())
+                    placeholders = ", ".join(["?" for _ in good_rows[0].keys()])
+                    cur.executemany(
+                        f"INSERT INTO {self.table_name} ({cols}) VALUES ({placeholders})",
+                        [list(row.values()) for row in good_rows],
+                    )
+                con.commit()
+            finally:
+                con.close()
+
+            self._refresh_cache()
+
+            return "success", bad_rows
+
+    def append(self, data: list | pd.DataFrame) -> tuple[str, list]:
+        """Append mode: validate rows, insert them, and refresh the cache."""
+        if isinstance(data, pd.DataFrame):
+            data = data.to_dict(orient="records")
+
+        with self.connection._lock:
+            if not data:
+                return "success", []
+
+            working_rows = self._cache.to_dict(orient="records")
+            data = [self._fill_optional_defaults(row).copy() for row in data]
+            candidate_rows = working_rows + data
+            bad_rows = []
+            good_rows = []
+
+            for row in data:
+                candidate_row = row
+                is_valid = self.is_valid_batch(candidate_row, candidate_rows)
+
+                if not is_valid:
+                    bad_rows.append(candidate_row)
+                else:
+                    good_rows.append(candidate_row)
+                    working_rows.append(candidate_row)
+
+            if bad_rows:
+                return self.table_name, bad_rows
+
+            con, cur = self.connection.connect()
+            try:
+                cols = ", ".join(good_rows[0].keys())
+                placeholders = ", ".join(["?" for _ in good_rows[0].keys()])
+                cur.executemany(
+                    f"INSERT INTO {self.table_name} ({cols}) VALUES ({placeholders})",
+                    [list(row.values()) for row in good_rows],
+                )
+                con.commit()
+            finally:
+                con.close()
+
+            self._refresh_cache()
+
+            return "success", []
         

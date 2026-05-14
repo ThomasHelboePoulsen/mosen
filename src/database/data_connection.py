@@ -4,9 +4,13 @@ import keyboard as k
 
 from src.container import Container
 from src.database.tables.product import ProductTable
+from src.database.tables.settings import SettingsTable
+from src.database.tables.temporary import TemporaryTable
 from src.database.tables.user import UserTable
 from src.database.tables.transaction import TransactionTable
 
+
+#TODO: schedule cache refreshes and report if they were stale.
 
 class Database:
     """DB handler for all business objects."""
@@ -20,12 +24,15 @@ class Database:
             product_table=self._product_table,
             user_table=self._user_table
         )
+        self._temporary_table = TemporaryTable(self._connection)
+        self._settings_table = SettingsTable(self._connection)
         self.init()
     
     def init(self):
         """Initialize connection and create all tables."""
         con, cur = self._connection.connect()
         self._create_tables()
+        self._settings_table.ensure_defaults()
         return con, cur
     
     def _create_tables(self):
@@ -83,8 +90,32 @@ class Database:
             return self._user_table.set(data)
         elif table == "transactions":
             return self._transaction_table.set(data)
+        elif table == "temporary":
+            return self._temporary_table.set(data)
+        elif table == "settings":
+            return self._settings_table.set(data)
         else:
             raise ValueError(f"Unknown table: {table}")
+
+    @property
+    def prods(self):
+        return self._product_table.get()
+
+    @property
+    def users(self):
+        return self._user_table.get()
+
+    @property
+    def transactions(self):
+        return self._transaction_table.get()
+
+    @property
+    def temporary(self):
+        return self._temporary_table.get()
+
+    @property
+    def settings(self):
+        return self._settings_table.get()
     
     @property
     def data_file(self):
@@ -92,32 +123,36 @@ class Database:
 
 
 def get_prods():
-    return Container.get(Database)._product_table.get()
+    return Container.get(Database).prods
 
 def get_trans():
-    return Container.get(Database)._transaction_table.get()
+    return Container.get(Database).transactions
 
 def get_users():
-    return Container.get(Database)._user_table.get()
+    return Container.get(Database).users
 
 def get_current_trans():
-    query = "SELECT * FROM temporary"
-    cols = ["barcode_prod", "name"]
-    return Container.get(Database).get_query(query, cols)
+    return Container.get(Database).temporary
 
 def update_current_trans(data: pd.DataFrame):
-    con, cur = Container.get(Database).init()
     if len(data.columns) == 2:
-        data.to_sql(name="temporary", con=con, if_exists="replace", index=False)
-        con.commit()
+        Container.get(Database)._temporary_table.set(data)
     else:
         raise ValueError("Incorrect data")
 
 def reset_table(table: str):
-    con, cur = Container.get(Database).init()
-    cur.execute(f"DELETE FROM {table}")
+    db = Container.get(Database)
+    table_map = {
+        "users": db._user_table,
+        "prods": db._product_table,
+        "transactions": db._transaction_table,
+        "temporary": db._temporary_table,
+        "settings": db._settings_table,
+    }
+    if table not in table_map:
+        raise ValueError(f"Unknown table: {table}")
+    table_map[table].set([])
     print(f"Reset on {table}")
-    con.commit()
 
 def reset_current_trans():
     reset_table("temporary")
@@ -126,8 +161,7 @@ def upload_values(data: list, table: str):
     return Container.get(Database).upload_values(data, table)
 
 def add_transactions(trans_df):
-    con, cur = Container.get(Database).init()
-    trans_df.to_sql(name="transactions", con=con, if_exists="append", index=False)
+    return Container.get(Database)._transaction_table.append(trans_df)
 
 def check_db(data, con, cur):
     if len(data) == 0:
@@ -140,35 +174,29 @@ def check_db(data, con, cur):
         return True
 
 def get_password():
-    con, cur = Container.get(Database).init()
-    data = list(cur.execute("SELECT password FROM settings"))
-    if not check_db(data, con, cur):
-        data = list(cur.execute("SELECT password FROM settings"))
-    return data[0][0]
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return str(db.settings.iloc[0]["password"])
 
 def get_backup_time():
-    con, cur = Container.get(Database).init()
-    data = list(cur.execute("SELECT backup FROM settings"))
-    if not check_db(data, con, cur):
-        data = list(cur.execute("SELECT backup FROM settings"))
-    return int(data[0][0])
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return int(db.settings.iloc[0]["backup"])
 
 def get_show_bill():
-    con, cur = Container.get(Database).init()
-    data = list(cur.execute("SELECT show_bill FROM settings"))
-    if not check_db(data, con, cur):
-        data = list(cur.execute("SELECT show_bill FROM settings"))
-    return data[0][0] == "True"
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return db.settings.iloc[0]["show_bill"] == "True"
 
 def get_waste():
-    con, cur = Container.get(Database).init()
-    data = list(cur.execute("SELECT waste FROM settings"))
-    if not check_db(data, con, cur):
-        data = list(cur.execute("SELECT waste FROM settings"))
-    return int(data[0][0])
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return int(db.settings.iloc[0]["waste"])
 
 def update_values(password=None, show_bill=None, waste=None, backup_time=None):
-    con, cur = Container.get(Database).init()
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    settings_row = db.settings.iloc[0].to_dict()
     inps = {
         "password": password,
         "show_bill": show_bill,
@@ -178,8 +206,8 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None):
     for key, value in inps.items():
         if value is None:
             continue
-        cur.execute(f"""UPDATE settings SET "{key}" = '{value}'""")
-        con.commit()
+        settings_row[key] = str(value)
+    db._settings_table.set([settings_row])
 
 def reset_all_tables():
     con, cur = Container.get(Database).init()
