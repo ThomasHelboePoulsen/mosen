@@ -153,9 +153,10 @@ class TestOpenProdModal:
             {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20},
             {"barcode": 456, "name": "Wine", "price": 8.0, "category": "Alcohol", "current_stock": 5, "initial_stock": 10},
         ]
+        test_db._product_table.set(pd.DataFrame(data))
         
         # Act
-        is_open, barcode = open_prod_modal(1, 0, 0, data)
+        is_open, barcode = open_prod_modal(1, 0, 0)
         
         # Assert
         assert is_open is True
@@ -165,10 +166,9 @@ class TestOpenProdModal:
     def test_open_prod_modal_default_barcode_when_empty(self, mock_ctx, test_db):
         # Arrange
         mock_ctx.triggered_id = "new_prod_btn"
-        data = []
         
         # Act
-        is_open, barcode = open_prod_modal(1, 0, 0, data)
+        is_open, barcode = open_prod_modal(1, 0, 0)
         
         # Assert
         assert is_open is True
@@ -178,10 +178,9 @@ class TestOpenProdModal:
     def test_open_prod_modal_closes_on_confirm(self, mock_ctx, test_db):
         # Arrange
         mock_ctx.triggered_id = "confirm_prod"
-        data = [{"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}]
         
         # Act
-        is_open, barcode = open_prod_modal(0, 1, 0, data)
+        is_open, barcode = open_prod_modal(0, 1, 0)
         
         # Assert
         assert is_open is False

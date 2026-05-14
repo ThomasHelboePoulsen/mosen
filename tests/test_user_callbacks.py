@@ -156,13 +156,12 @@ class TestOpenUserModal:
     def test_open_user_modal_generates_next_barcode(self, mock_ctx, test_db):
         # Arrange
         mock_ctx.triggered_id = "new_user_btn"
-        data = [
-            {"barcode": 1500, "name": "John", "rank": "Admin", "team": "Team A", "is_guest": 0},
-            {"barcode": 1600, "name": "Jane", "rank": "User", "team": "Team B", "is_guest": 0},
-        ]
-        
+        test_db._user_table.set(pd.DataFrame([
+            {"barcode": 1600, "name": "John", "rank": "Admin", "team": "Team A", "is_guest": 0}
+        ]))
+
         # Act
-        is_open, barcode = open_user_modal(1, 0, 0, data)
+        is_open, barcode = open_user_modal(1, 0, 0)
         
         # Assert
         assert is_open is True
@@ -172,10 +171,9 @@ class TestOpenUserModal:
     def test_open_user_modal_default_barcode_when_empty(self, mock_ctx, test_db):
         # Arrange
         mock_ctx.triggered_id = "new_user_btn"
-        data = []
         
         # Act
-        is_open, barcode = open_user_modal(1, 0, 0, data)
+        is_open, barcode = open_user_modal(1, 0, 0)
         
         # Assert
         assert is_open is True
@@ -185,10 +183,9 @@ class TestOpenUserModal:
     def test_open_user_modal_closes_on_confirm(self, mock_ctx, test_db):
         # Arrange
         mock_ctx.triggered_id = "confirm_user"
-        data = [{"barcode": 1500, "name": "John", "rank": "Admin", "team": "Team A", "is_guest": 0}]
         
         # Act
-        is_open, barcode = open_user_modal(0, 1, 0, data)
+        is_open, barcode = open_user_modal(0, 1, 0)
         
         # Assert
         assert is_open is False

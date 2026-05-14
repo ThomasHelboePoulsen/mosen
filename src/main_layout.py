@@ -28,8 +28,9 @@ from src.modals import (
 )
 from src.trans_layout import trans_modal
 from src.error_handler import get_error_view_components,append_error
-from src.main_page_callbacks import create_overview
+from src.analytics.overview_plot import create_overview
 from src.components import get_upload, get_table
+from src import main_page_callbacks  # Register main page callbacks
 from src.tables import prod_callbacks  # Register product callbacks
 from src.database.data_connection import (
     get_prods,

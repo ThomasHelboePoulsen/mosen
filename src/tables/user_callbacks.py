@@ -27,7 +27,7 @@ def open_user_modal(new_user, confirm, cancel):
     try:
         table_data = Container.get(Database)._user_table.get_typed()
         barcode = max(table_data["barcode"]) + 1
-    except KeyError:
+    except:
         barcode = 1000
     if trigger == "new_user_btn":
         return True, barcode
