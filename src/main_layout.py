@@ -40,8 +40,12 @@ from src.database.data_connection import (
     get_show_bill,
     get_waste,
     get_backup_time,
+    get_cache_validation_time,
+    get_backup_interval_ms,
+    get_cache_validation_interval_ms,
 )
 from src.tables.user_callbacks import init
+from src import cache_validation  # register cache validation callback
 
 users_init = init()
 
@@ -380,12 +384,38 @@ WARNING: Do not use this on intro trips. It shows individual user data, so only 
                                     dbc.Tooltip(
                                         children="Timer for making backups of the database. Timer is set in minutes. Backups are stored in dedicated 'backups' folder. Setting this to 0, means the program will not create backups, and you will be on your own when the app inevitabily fails you",
                                         target="settings_backup_time",
+                                        placement="right",
                                     ),
                                 ],
                                 align="center",
                             ),
                             width=12,
                         ),
+                            html.Hr(),
+                            dbc.Col(
+                                dbc.Row(
+                                    [
+                                        dbc.Col(html.P("Cache Validation Timer"), width=4),
+                                        dbc.Col(
+                                            dbc.Input(
+                                                value=get_cache_validation_time(),
+                                                id="settings_cache_validation_time",
+                                                type="number",
+                                                minLength=0,
+                                            ),
+                                            width=4,
+                                        ),
+                                        dbc.Tooltip(
+                                            children="Timer for checking if the cache is outdated. It should never happen, but just in case it will trigger a frontend error. This check blocks all other queries while it runs, so setting it to a very low value might cause performance issues. Setting it to 0 means the app will never validate the cache, which means that if it ever gets stale, you will be on your own.",
+                                            target="settings_cache_validation_time",
+                                            className="wide-tooltip",
+                                            placement="right",
+                                        ),
+                                    ],
+                                    align="center",
+                                ),
+                                width=12,
+                            ),
                         html.Hr(),
                         dbc.Col(
                             dbc.Row(
@@ -677,8 +707,13 @@ def layout_func():
             dcc.Store(id="retain_focus_prod", data=None),
             dcc.Interval(
                 id="backup_interval",
-                interval=get_backup_time(),
+                interval=get_backup_interval_ms(),
                 n_intervals=0,  # default ten minutes
+            ),
+            dcc.Interval(
+                id="cache_validation_interval",
+                interval=get_cache_validation_interval_ms(),
+                n_intervals=0,
             ),
             dcc.Store(id="backup_filename", data=None),
         ]

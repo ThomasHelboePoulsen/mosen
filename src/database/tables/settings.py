@@ -9,6 +9,7 @@ class SettingsTable(BaseTable):
         Column("show_bill", str, required=True),
         Column("waste", str, required=True),
         Column("backup", str, required=True),
+        Column("cache_validation", int, required=True),
     ]
 
     create_sql = """
@@ -16,7 +17,8 @@ class SettingsTable(BaseTable):
             password varchar(255),
             show_bill varchar(255),
             waste varchar(255),
-            backup varchar(255)
+            backup varchar(255),
+            cache_validation INTEGER
         )
     """
 
@@ -25,6 +27,7 @@ class SettingsTable(BaseTable):
         "show_bill": "True",
         "waste": "0",
         "backup": "10",
+        "cache_validation": 5,
     }
 
     def ensure_defaults(self) -> None:

@@ -333,6 +333,17 @@ def set_backup_timer(interval):
     return no_update
 
 
+@callback(
+    Output("cache_validation_interval", "interval"),
+    Input("settings_cache_validation_time", "value"),
+)
+def set_cache_validation_timer(interval):
+    if interval is not None:
+        update_values(cache_validation_time=interval)
+        return interval * 60000
+    return no_update
+
+
 @callback(Output("study_users_modal", "is_open"), Input("study_users_btn", "n_clicks"))
 def open_study_users(trigger):
     if trigger is not None:

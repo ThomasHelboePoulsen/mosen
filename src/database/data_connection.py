@@ -1,6 +1,7 @@
 import pandas as pd
 from datetime import datetime
 import keyboard as k
+import hashlib
 
 from src.container import Container
 from src.database.tables.base_table import BaseTable
@@ -9,14 +10,15 @@ from src.database.tables.settings import SettingsTable
 from src.database.tables.temporary import TemporaryTable
 from src.database.tables.user import UserTable
 from src.database.tables.transaction import TransactionTable
+from src.database.connection import Connection
 
 
-#TODO: schedule cache refreshes and report if they were stale.
 
 class Database:
-    """DB handler for all business objects."""
+    """DB Handler.
+    Warning: You risk data corruption if you have more than one instance or you use the Connection directly.
+    Always use Container.get(Database) to get the instance and never use Connection directly."""
     def __init__(self, data_file="beerbase.db"):
-        from src.database.connection import Connection
         self._connection = Connection(data_file)
         self._product_table = ProductTable(self._connection)
         self._user_table = UserTable(self._connection)
@@ -105,6 +107,25 @@ class Database:
     def data_file(self):
         return self._connection.data_file
 
+    def validate_cache_hashes(self):
+        """Under DB lock: for each table, copy current cache, refresh it, compute MD5 hashes and
+        report which tables changed. Returns a list of table names that changed (empty list if none)."""
+        changed = []
+
+        def hash_df(df: pd.DataFrame) -> str:
+            bytes_data = df.to_csv(index=False).encode("utf-8")
+            return hashlib.md5(bytes_data).hexdigest()
+        
+        with self._connection._lock:
+            for name, table in self.tables.items():
+                old_hash = hash_df(table.get())
+                table._refresh_cache()
+                new_hash = hash_df(table.get())
+
+                if old_hash != new_hash:
+                    changed.append(name)
+        return changed
+
 
 def get_prods():
     return Container.get(Database).prods
@@ -150,6 +171,28 @@ def get_backup_time():
     db._settings_table.ensure_defaults()
     return int(db.settings.iloc[0]["backup"])
 
+
+def get_cache_validation_time():
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return int(db.settings.iloc[0]["cache_validation"])
+
+
+def get_backup_interval_ms():
+    try:
+        minutes = get_backup_time()
+        return int(minutes) * 60000
+    except Exception:
+        return 10 * 60000
+
+
+def get_cache_validation_interval_ms():
+    try:
+        minutes = get_cache_validation_time()
+        return int(minutes) * 60000
+    except Exception:
+        return 5 * 60000
+
 def get_show_bill():
     db = Container.get(Database)
     db._settings_table.ensure_defaults()
@@ -160,7 +203,7 @@ def get_waste():
     db._settings_table.ensure_defaults()
     return int(db.settings.iloc[0]["waste"])
 
-def update_values(password=None, show_bill=None, waste=None, backup_time=None):
+def update_values(password=None, show_bill=None, waste=None, backup_time=None, cache_validation_time=None):
     db = Container.get(Database)
     db._settings_table.ensure_defaults()
     settings_row = db.settings.iloc[0].to_dict()
@@ -169,6 +212,7 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None):
         "show_bill": show_bill,
         "waste": waste,
         "backup": backup_time,
+        "cache_validation": cache_validation_time,
     }
     for key, value in inps.items():
         if value is None:
