@@ -556,3 +556,39 @@ class TestSettingsOperations:
         # Assert
         result = get_trans()
         assert len(result) == 1
+
+
+class TestCreateTables:
+
+    def test_init_creates_all_tables(self, tmp_path):
+        # Arrange
+        db_file = str(tmp_path / "createdb.db")
+
+        # Act
+        db = Database(db_file)
+
+        # Assert
+        con, cur = db._connection.connect()
+        assert db._connection.table_exists("prods") is True
+        assert db._connection.table_exists("users") is True
+        assert db._connection.table_exists("transactions") is True
+        assert db._connection.table_exists("temporary") is True
+        assert db._connection.table_exists("settings") is True
+        con.close()
+
+    def test__create_tables_recreates_dropped_table(self, test_db):
+        # Arrange - ensure tables exist then drop one
+        db = test_db
+        con, cur = db._connection.connect()
+        # Drop users table
+        cur.execute("DROP TABLE IF EXISTS users")
+        con.commit()
+        con.close()
+
+        assert db._connection.table_exists("users") is False
+
+        # Act - call private method to (re)create missing tables
+        db._create_tables()
+
+        # Assert - users table recreated
+        assert db._connection.table_exists("users") is True

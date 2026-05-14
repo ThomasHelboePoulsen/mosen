@@ -26,6 +26,13 @@ class Database:
         )
         self._temporary_table = TemporaryTable(self._connection)
         self._settings_table = SettingsTable(self._connection)
+        self.tables = {
+            self._product_table.table_name: self._product_table,
+            self._user_table.table_name: self._user_table,
+            self._transaction_table.table_name: self._transaction_table,
+            self._temporary_table.table_name: self._temporary_table,
+            self._settings_table.table_name: self._settings_table,
+        }
         self.init()
     
     def init(self):
@@ -37,30 +44,10 @@ class Database:
     
     def _create_tables(self):
         """Create all required tables if they don't exist."""
-        table_schemas = {
-            "prods": ProductTable.create_sql,
-            "users": UserTable.create_sql,
-            "transactions": TransactionTable.create_sql,
-            "temporary": """
-                CREATE TABLE temporary (
-                    barcode_prod varchar(255),
-                    name varchar(255)
-                )
-            """,
-            "settings": """
-                CREATE TABLE settings (
-                    password varchar(255),
-                    show_bill varchar(255),
-                    waste varchar(255),
-                    backup varchar(255)
-                )
-            """,
-        }
-        
         con, cur = self._connection.connect()
-        for table_name, create_sql in table_schemas.items():
+        for table_name, table in self.tables.items():
             if not self._table_exists(table_name):
-                cur.execute(create_sql)
+                cur.execute(table.create_sql)
                 con.commit()
         con.close()
     
