@@ -1,11 +1,12 @@
 from src.database.tables.base_table import BaseTable
 from src.database.tables.column import BarcodeColumn, Column
+from src.barcode import BarcodePartition
 
 
 class TemporaryTable(BaseTable):
     table_name = "temporary"
     columns = [
-        BarcodeColumn("barcode_prod", int, min=100, max=999, required=True),
+        BarcodeColumn("barcode_prod", int, partition=BarcodePartition.PRODUCT, required=True),
         Column("name", str, required=True),
     ]
 

@@ -6,6 +6,7 @@ from src.database.data_connection import Database
 from src.database.tables.column import Column
 from src.database.tables.product import ProductTable
 from src.database.tables.user import UserTable
+from src.barcode import BarcodePartition
 
 
 @pytest.fixture
@@ -152,6 +153,19 @@ class TestColumnIntegration:
         assert df_typed["barcode"].dtype == int
         assert df_typed["price"].dtype == float
         assert df_typed["current_stock"].dtype == int
+
+
+class TestBarcodePartitions:
+    def test_partitions_do_not_overlap(self):
+        partitions = list(BarcodePartition)
+        for index, left in enumerate(partitions):
+            for right in partitions[index + 1:]:
+                assert left.maximum < right.minimum or right.maximum < left.minimum
+
+    def test_enum_has_no_aliases(self):
+        members = BarcodePartition.__members__
+        for name, member in members.items():
+            assert name == member.name, f"Enum alias detected: {name} -> {member.name}"
 
 
 class TestEmptyValueHandling:

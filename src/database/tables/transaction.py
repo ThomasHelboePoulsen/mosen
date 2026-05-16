@@ -3,13 +3,14 @@ from src.database.tables.product import ProductTable
 from src.database.tables.user import UserTable
 from src.database.connection import Connection
 from src.database.tables.column import BarcodeColumn, Column
+from src.barcode import BarcodePartition
 
 
 class TransactionTable(BaseTable):
     table_name = "transactions"
     columns = [
-        BarcodeColumn("barcode_user", int, min=1000, max=99999999999, required=True),
-        BarcodeColumn("barcode_prod", int, min=100, max=999, required=True),
+        BarcodeColumn("barcode_user", int, partition=BarcodePartition.USER, required=True),
+        BarcodeColumn("barcode_prod", int, partition=BarcodePartition.PRODUCT, required=True),
         Column("timestamp", str, required=True),
     ]
     

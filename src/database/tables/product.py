@@ -1,12 +1,13 @@
 import pandas as pd
 from src.database.tables.base_table import BaseTable
 from src.database.tables.column import Column, BarcodeColumn
+from src.barcode import BarcodePartition
 
 
 class ProductTable(BaseTable):
     table_name = "prods"
     columns = [
-        BarcodeColumn("barcode", int, min=100, max=999, required=True, is_primary_key=True),
+        BarcodeColumn("barcode", int, partition=BarcodePartition.PRODUCT, required=True, is_primary_key=True),
         Column("name", str, required=True),
         Column("price", float, required=True),
         Column("category", str, required=True),

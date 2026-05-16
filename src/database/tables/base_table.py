@@ -105,10 +105,10 @@ class BaseTable(ABC):
         """Return all rows with correct Python types."""
         df = self.get_untyped()
         if df.empty:
-            return pd.DataFrame({col.name: pd.Series([], dtype=col.pandas_dtype) 
+            return pd.DataFrame({col.name: pd.Series([], dtype=col.dtype) 
                                for col in self.columns})
         for col in self.columns:
-            df[col.name] = df[col.name].astype(col.pandas_dtype)
+            df[col.name] = df[col.name].astype(col.dtype)
         return df
     
     def _fill_optional_defaults(self, row: dict) -> dict:

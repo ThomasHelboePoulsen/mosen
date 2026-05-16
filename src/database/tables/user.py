@@ -1,11 +1,12 @@
 from src.database.tables.base_table import BaseTable
 from src.database.tables.column import Column, BarcodeColumn
+from src.barcode import BarcodePartition
 
 
 class UserTable(BaseTable):
     table_name = "users"
     columns = [
-        BarcodeColumn("barcode", int, min=1000, max=99999999999, required=True, is_primary_key=True),
+        BarcodeColumn("barcode", int, partition=BarcodePartition.USER, required=True, is_primary_key=True),
         Column("name", str, required=True),
         Column("rank", str, required=True),
         Column("team", str, required=True),
