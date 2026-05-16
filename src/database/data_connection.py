@@ -3,6 +3,7 @@ from datetime import datetime
 import keyboard as k
 import hashlib
 
+from src.barcode import BarcodePartition, is_barcode
 from src.container import Container
 from src.database.tables.base_table import BaseTable
 from src.database.tables.product import ProductTable
@@ -82,6 +83,18 @@ class Database:
     def upload_values(self, data: list, table: str) -> tuple[str, list]:
         """Upload data to table."""
         return self.get_table(table).set(data)
+    
+    def barcode_exists(self, barcode: int, partition: BarcodePartition) -> bool:
+        """Check if barcode exists in the relevant table based on partition."""
+        if not is_barcode(barcode, partition):
+            return False
+
+        if partition == BarcodePartition.PRODUCT:
+            return int(barcode) in list(self._product_table.get()["barcode"])
+        elif partition == BarcodePartition.USER:
+            return int(barcode) in list(self._user_table.get()["barcode"])
+        else:
+            raise ValueError("Unknown barcode partition")
 
     @property
     def prods(self):
