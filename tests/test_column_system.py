@@ -89,7 +89,7 @@ class TestOptionalColumnFilling:
         assert len(bad_rows) == 0
         
         # Verify is_guest was filled with default
-        df = table.get_typed()
+        df = table.get()
         assert len(df) == 1
         assert df.iloc[0]["is_guest"] == 0
 
@@ -148,7 +148,7 @@ class TestColumnIntegration:
         ]
         table.set(data)
         
-        df_typed = table.get_typed()
+        df_typed = table.get()
         assert df_typed["barcode"].dtype == int
         assert df_typed["price"].dtype == float
         assert df_typed["current_stock"].dtype == int
@@ -219,7 +219,7 @@ class TestEmptyValueHandling:
         # Assert
         assert result == "success"
         assert len(bad_rows) == 0
-        df = table.get()
+        df = table.get_untyped()
         assert len(df) == 1
         assert df.iloc[0]["is_guest"] == "0"
 
@@ -243,7 +243,7 @@ class TestEmptyValueHandling:
         # Assert
         assert result == "success"
         assert len(bad_rows) == 0
-        df = table.get()
+        df = table.get_untyped()
         assert len(df) == 1
         assert df.iloc[0]["is_guest"] == "0"
 

@@ -7,8 +7,8 @@ class SettingsTable(BaseTable):
     columns = [
         Column("password", str, required=True),
         Column("show_bill", str, required=True),
-        Column("waste", str, required=True),
-        Column("backup", str, required=True),
+        Column("waste", int, required=True),
+        Column("backup", int, required=True),
         Column("cache_validation", int, required=True),
     ]
 
@@ -16,8 +16,8 @@ class SettingsTable(BaseTable):
         CREATE TABLE settings (
             password varchar(255),
             show_bill varchar(255),
-            waste varchar(255),
-            backup varchar(255),
+            waste INTEGER,
+            backup INTEGER,
             cache_validation INTEGER
         )
     """
@@ -25,13 +25,13 @@ class SettingsTable(BaseTable):
     default_row = {
         "password": "OLProgram",
         "show_bill": "True",
-        "waste": "0",
-        "backup": "10",
+        "waste": 0,
+        "backup": 10,
         "cache_validation": 5,
     }
 
     def ensure_defaults(self) -> None:
         """Ensure the settings table contains the expected default row."""
         with self.connection._lock:
-            if self.get().empty:
+            if self.get_untyped().empty:
                 self.set([self.default_row.copy()])

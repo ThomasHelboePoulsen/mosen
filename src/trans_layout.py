@@ -153,7 +153,9 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close,er
                 for _, row in current.iterrows()
             ]
         )
-        add_transactions(new_rows)
+        add_result, bad_rows = add_transactions(new_rows)
+        if not add_result == "success":
+            return no_update, no_update, no_update, False, errors(f"Failed to add transactions due to the following bad rows: {bad_rows}")
         return False, "", no_update, False, no_update
 
     return no_update, no_update, no_update, False, no_update

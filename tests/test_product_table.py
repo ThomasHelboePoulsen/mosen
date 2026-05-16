@@ -28,7 +28,7 @@ class TestProductTableBasics:
         table = ProductTable(test_db._connection)
         
         # Act
-        result = table.get()
+        result = table.get_untyped()
         
         # Assert
         assert isinstance(result, pd.DataFrame)
@@ -40,7 +40,7 @@ class TestProductTableBasics:
         table = ProductTable(test_db._connection)
         
         # Act
-        result = table.get_typed()
+        result = table.get()
         
         # Assert - empty but with correct dtypes
         assert result["barcode"].dtype == int
@@ -73,7 +73,7 @@ class TestProductTableSet:
         # Assert
         assert result == "success"
         assert len(bad_rows) == 0
-        assert len(table.get()) == 1
+        assert len(table.get_untyped()) == 1
 
     def test_set_replaces_all_data(self, test_db):
         # Arrange
@@ -104,7 +104,7 @@ class TestProductTableSet:
         table.set(data2)
         
         # Assert - should only have second dataset
-        result = table.get()
+        result = table.get_untyped()
         assert len(result) == 1
         assert result.iloc[0]["barcode"] == "456"
 
@@ -199,7 +199,7 @@ class TestProductTableSet:
         # Assert
         assert result == "success"
         assert len(bad_rows) == 0
-        assert len(table.get()) == 1
+        assert len(table.get_untyped()) == 1
 
 
 
@@ -221,7 +221,7 @@ class TestProductTableGetTyped:
         table.set(data)
         
         # Act
-        df = table.get_typed()
+        df = table.get()
         
         # Assert
         assert df["barcode"].dtype == int
@@ -251,7 +251,7 @@ class TestProductTableSetAtomicity:
             }
         ]
         table.set(initial_data)
-        initial_state = table.get()
+        initial_state = table.get_untyped()
         
         # Act - attempt to set with one bad row (invalid barcode)
         new_data = [
@@ -277,7 +277,7 @@ class TestProductTableSetAtomicity:
         # Assert - database should still contain original data
         assert len(bad_rows) == 1  # One row was rejected
         assert result == table.table_name  # Indicates rejection
-        current_state = table.get()
+        current_state = table.get_untyped()
         assert len(current_state) == 1
         assert current_state.iloc[0]["barcode"] == "123"  # Original data untouched
 
@@ -321,7 +321,7 @@ class TestProductTableSetAtomicity:
         # Assert
         assert len(bad_rows) == 2  # Both duplicate barcodes marked bad
         assert result == table.table_name
-        current_state = table.get()
+        current_state = table.get_untyped()
         assert len(current_state) == 1
         assert current_state.iloc[0]["barcode"] == "123"  # Original data preserved
 
@@ -365,7 +365,7 @@ class TestProductTableSetAtomicity:
         # Assert - database should still contain original data
         assert len(bad_rows) == 1
         assert result == table.table_name
-        current_state = table.get()
+        current_state = table.get_untyped()
         assert len(current_state) == 1
         assert current_state.iloc[0]["barcode"] == "123"
 
@@ -409,7 +409,7 @@ class TestProductTableSetAtomicity:
         # Assert - database should have new data
         assert result == "success"
         assert len(bad_rows) == 0
-        current_state = table.get()
+        current_state = table.get_untyped()
         assert len(current_state) == 2
         barcodes = sorted([row["barcode"] for row in current_state.to_dict("records")])
         assert barcodes == ["456", "789"]
@@ -437,7 +437,7 @@ class TestProductTableSetAtomicity:
             }
         ]
         table.set(initial_data)
-        initial_count = len(table.get())
+        initial_count = len(table.get_untyped())
         
         # Act - attempt to replace with mixed valid/invalid data
         new_data = [
@@ -463,7 +463,7 @@ class TestProductTableSetAtomicity:
         # Assert - original data unchanged
         assert len(bad_rows) == 1
         assert result == table.table_name
-        current_state = table.get()
+        current_state = table.get_untyped()
         assert len(current_state) == initial_count
         barcodes = sorted([row["barcode"] for row in current_state.to_dict("records")])
         assert barcodes == ["111", "222"]
@@ -500,6 +500,6 @@ class TestProductTableSetAtomicity:
         # Assert - database should still contain original data
         assert len(bad_rows) == 1
         assert result == table.table_name
-        current_state = table.get()
+        current_state = table.get_untyped()
         assert len(current_state) == 1
         assert current_state.iloc[0]["barcode"] == "123"

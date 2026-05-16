@@ -85,23 +85,23 @@ class Database:
 
     @property
     def prods(self):
-        return self._product_table.get()
+        return self._product_table.get_untyped()
 
     @property
     def users(self):
-        return self._user_table.get()
+        return self._user_table.get_untyped()
 
     @property
     def transactions(self):
-        return self._transaction_table.get()
+        return self._transaction_table.get_untyped()
 
     @property
     def temporary(self):
-        return self._temporary_table.get()
+        return self._temporary_table.get_untyped()
 
     @property
     def settings(self):
-        return self._settings_table.get()
+        return self._settings_table.get_untyped()
     
     @property
     def data_file(self):

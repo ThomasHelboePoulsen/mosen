@@ -96,14 +96,14 @@ class BaseTable(ABC):
         all_rows_with_new = all_other_rows + [row]
         return self.is_valid_batch(row, all_rows_with_new)
     
-    def get(self) -> pd.DataFrame:
+    def get_untyped(self) -> pd.DataFrame:
         """Return all rows as strings."""
         with self.connection._lock:
             return self._cache.copy()
     
-    def get_typed(self) -> pd.DataFrame:
+    def get(self) -> pd.DataFrame:
         """Return all rows with correct Python types."""
-        df = self.get()
+        df = self.get_untyped()
         if df.empty:
             return pd.DataFrame({col.name: pd.Series([], dtype=col.pandas_dtype) 
                                for col in self.columns})

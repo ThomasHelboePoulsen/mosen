@@ -23,7 +23,7 @@ from src.database.data_connection import Database
 )
 def open_prod_modal(new_prod, confirm, cancel):
     try:
-        table_data = Container.get(Database)._product_table.get_typed()
+        table_data = Container.get(Database)._product_table.get()
         barcode = max(table_data["barcode"]) + 1
     except:
         barcode = 101
@@ -63,7 +63,7 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
     if n_clicks is None:
         return no_update, no_update
     if n_clicks > 0:
-        data = table.get()
+        data = table.get_untyped()
         
         if edit_barcode is not None and str(edit_barcode) in list(data["barcode"]):
             barcode_mask = data["barcode"].astype(str) == str(edit_barcode)
@@ -85,7 +85,7 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
         )
         upload_values(trans, "transactions")
 
-    return table.get().to_dict(orient="records"), None
+    return table.get_untyped().to_dict(orient="records"), None
 
 
 @callback(

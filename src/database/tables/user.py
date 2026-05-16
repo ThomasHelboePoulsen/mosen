@@ -14,7 +14,7 @@ class UserTable(BaseTable):
     
     create_sql = """
         CREATE TABLE users (
-            barcode varchar(255),
+            barcode INTEGER,
             name varchar(255),
             rank varchar(255),
             team varchar(255),

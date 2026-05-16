@@ -1,24 +1,27 @@
 from src.database.tables.base_table import BaseTable
-from src.database.tables.column import Column
+from src.database.tables.product import ProductTable 
+from src.database.tables.user import UserTable
+from src.database.connection import Connection
+from src.database.tables.column import BarcodeColumn, Column
 
 
 class TransactionTable(BaseTable):
     table_name = "transactions"
     columns = [
-        Column("barcode_user", str, required=True),
-        Column("barcode_prod", str, required=True),
+        BarcodeColumn("barcode_user", int, min=1000, max=99999999999, required=True),
+        BarcodeColumn("barcode_prod", int, min=100, max=999, required=True),
         Column("timestamp", str, required=True),
     ]
     
     create_sql = """
         CREATE TABLE transactions (
-            barcode_user varchar(255),
-            barcode_prod varchar(255),
-            timestamp varchar(255)
+            barcode_user INTEGER,
+            barcode_prod INTEGER,
+            timestamp VARCHAR(255)
         )
     """
     
-    def __init__(self, connection: "Connection", product_table: "ProductTable", user_table: "UserTable"):
+    def __init__(self, connection: Connection, product_table: ProductTable, user_table: UserTable):
         self.product_table = product_table
         self.user_table = user_table
         super().__init__(connection)
@@ -36,9 +39,9 @@ class TransactionTable(BaseTable):
     def _validate_product_exists(self, row: dict) -> bool:
         """Check that barcode_prod exists in products table."""
         prods = self.product_table.get()
-        return str(row["barcode_prod"]) in list(prods["barcode"])
+        return int(row["barcode_prod"]) in list(prods["barcode"])
     
     def _validate_user_exists(self, row: dict) -> bool:
         """Check that barcode_user exists in users table."""
         users = self.user_table.get()
-        return str(row["barcode_user"]) in list(users["barcode"])
+        return int(row["barcode_user"]) in list(users["barcode"])
