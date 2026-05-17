@@ -1,5 +1,6 @@
 import pandas as pd
 from dash import callback, Output, Input, State, html, ctx, ALL, MATCH, no_update
+from src.barcode import BarcodePartition, is_barcode
 from src.database.data_connection import (
     get_users,
     get_prods,
@@ -57,35 +58,34 @@ def enable_confirm(inps, invalid_barcode):
     prevent_initial_call=True,
 )
 def add_row(n_clicks, stock_trigger, vals, edit_barcode):
+    """add or edit a product. edit_barcode allows changing the barcode of a product, otherwise just upsert on barcode"""
     db = Container.get(Database)
     table = db._product_table
     
     if n_clicks is None:
         return no_update, no_update
     if n_clicks > 0:
-        data = table.get_untyped()
+        data = table.get()
         
-        if edit_barcode is not None and str(edit_barcode) in list(data["barcode"]):
-            barcode_mask = data["barcode"].astype(str) == str(edit_barcode)
+        if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
+            barcode_mask = data["barcode"] == int(edit_barcode)
             data = data[~barcode_mask].copy()
 
         new_row = {col.name: val for col, val in zip(table.columns, vals)}
         
-        all_data_records = data.to_dict('records')
-        if not table.is_valid_single(new_row, all_data_records):
-            return no_update, no_update
-        
         data = pd.concat([data, pd.DataFrame([new_row])])
-        upload_values(data, "prods")
+        success, bad_rows = db.try_upload_values(data, "prods") 
+        if not success:
+             return no_update, no_update
 
-    if edit_barcode is not None and int(edit_barcode) < 999:
-        trans = get_trans()
-        trans.loc[trans["barcode_prod"] == str(edit_barcode), "barcode_prod"] = int(
+    if is_barcode(edit_barcode, BarcodePartition.PRODUCT):
+        trans = db.get_table("transactions").get()
+        trans.loc[trans["barcode_prod"] == int(edit_barcode), "barcode_prod"] = int(
             vals[0]
         )
-        upload_values(trans, "transactions")
+        db.upload_values(trans, "transactions")
 
-    return table.get_untyped().to_dict(orient="records"), None
+    return table.get().to_dict(orient="records"), None
 
 
 @callback(

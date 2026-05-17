@@ -84,6 +84,14 @@ class Database:
         """Upload data to table."""
         return self.get_table(table).set(data)
     
+    def try_upload_values(self, data: list, table: str) -> tuple[bool, list]:
+        """Upload data to table, return (success, bad_rows). On failure, no data is uploaded."""
+        try:
+            result, bad_rows = self.get_table(table).set(data)
+            return result == "success", bad_rows
+        except:
+            return False, []
+    
     def barcode_exists(self, barcode: int, partition: BarcodePartition) -> bool:
         """Check if barcode exists in the relevant table based on partition."""
         if not is_barcode(barcode, partition):
@@ -157,6 +165,8 @@ def update_current_trans(data: pd.DataFrame):
         Container.get(Database)._temporary_table.set(data)
     else:
         raise ValueError("Incorrect data")
+
+
 
 def reset_table(table: str):
     db = Container.get(Database)
