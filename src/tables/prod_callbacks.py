@@ -7,6 +7,7 @@ from src.database.data_connection import (
     get_trans,
     upload_values,
     update_values,
+    db_transaction,
 )
 from src.analytics.trans_calculations import get_currently_sold
 from src.analytics.product_calculations import calculate_waste
@@ -57,6 +58,7 @@ def enable_confirm(inps, invalid_barcode):
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
+@db_transaction
 def add_row(n_clicks, stock_trigger, vals, edit_barcode):
     """add or edit a product. edit_barcode allows changing the barcode of a product, otherwise just upsert on barcode"""
     db = Container.get(Database)

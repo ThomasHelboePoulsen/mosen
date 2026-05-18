@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime
+import functools
 import keyboard as k
 import hashlib
 
@@ -147,9 +147,42 @@ class Database:
                     changed.append(name)
         return changed
 
+    def execute_in_transaction(self, function):
+        """Run callable `function` inside a single DB transaction/connection under the DB lock.
+
+        Commits on success, rolls back on exception and refreshes all table caches
+        before re-raising the exception.
+        """
+        with self._connection._lock:
+            token = self._connection.begin_transaction()
+            try:
+                result = function()
+            except Exception:
+                try:
+                    self._connection.end_transaction(token, commit=False)
+                finally:
+                    for table in self.tables.values():
+                        try:
+                            table._refresh_cache()
+                        except Exception:
+                            pass
+                raise
+            else:
+                self._connection.end_transaction(token, commit=True)
+                return result
+
 
 def get_prods():
     return Container.get(Database).prods
+
+
+def db_transaction(func):
+    """Decorator: run the wrapped callable inside a DB transaction and re-raise exceptions."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        db = Container.get(Database)
+        return db.execute_in_transaction(lambda: func(*args, **kwargs))
+    return wrapper
 
 def get_trans():
     return Container.get(Database).transactions

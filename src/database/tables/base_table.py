@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+import sqlite3
+import uuid
 import pandas as pd
 from src.database.connection import Connection
 from src.database.tables.column import Column, BarcodeColumn
@@ -59,10 +61,9 @@ class BaseTable(ABC):
     def _ensure_table_exists(self):
         """Create table if it doesn't exist."""
         if not self.connection.table_exists(self.table_name):
-            con, _ = self.connection.connect()
-            con.execute(self.create_sql)
-            con.commit()
-            con.close()
+            def _create(con, cur):
+                cur.execute(self.create_sql)
+            self._with_transaction(_create)
 
     def _refresh_cache(self):
         query = f"SELECT * FROM {self.table_name}"
@@ -140,8 +141,7 @@ class BaseTable(ABC):
             if bad_rows:
                 return self.table_name, bad_rows
 
-            con, cur = self.connection.connect()
-            try:
+            def _do_replace(con, cur):
                 cur.execute(f"DELETE FROM {self.table_name}")
                 if good_rows:
                     cols = ", ".join(good_rows[0].keys())
@@ -150,11 +150,9 @@ class BaseTable(ABC):
                         f"INSERT INTO {self.table_name} ({cols}) VALUES ({placeholders})",
                         [list(row.values()) for row in good_rows],
                     )
-                con.commit()
-            finally:
-                con.close()
+                self._refresh_cache()
 
-            self._refresh_cache()
+            self._with_transaction(_do_replace)
 
             return "success", bad_rows
 
@@ -186,19 +184,36 @@ class BaseTable(ABC):
             if bad_rows:
                 return self.table_name, bad_rows
 
-            con, cur = self.connection.connect()
-            try:
+            def _do_append(con, cur):
                 cols = ", ".join(good_rows[0].keys())
                 placeholders = ", ".join(["?" for _ in good_rows[0].keys()])
                 cur.executemany(
                     f"INSERT INTO {self.table_name} ({cols}) VALUES ({placeholders})",
                     [list(row.values()) for row in good_rows],
                 )
-                con.commit()
-            finally:
-                con.close()
+                self._refresh_cache()
 
-            self._refresh_cache()
+            self._with_transaction(_do_append)
+            return "success", bad_rows
 
-            return "success", []
+    def _with_transaction(self, fn):
+        """Helper: run `fn(con, cur)` inside a DB transaction.
+
+        Uses Connection's first-token-ownership semantics:
+        - First caller's token becomes owner and controls commit/close
+        - Nested tokens don't affect transaction control
+        - Nested calls reuse the active connection
+        """
+        with self.connection._lock:
+            token = self.connection.begin_transaction()
+            try:
+                con, cur = self.connection.connect()
+                result = fn(con, cur)
+            except Exception:
+                self.connection.end_transaction(token, commit=False)
+                self._refresh_cache() 
+                raise
+            else:
+                self.connection.end_transaction(token, commit=True)
+                return result
         
