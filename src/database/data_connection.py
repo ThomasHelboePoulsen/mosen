@@ -13,6 +13,49 @@ from src.database.tables.user import UserTable
 from src.database.tables.transaction import TransactionTable
 from src.database.connection import Connection
 
+from dataclasses import dataclass
+from typing import Any, Tuple, Optional
+
+@dataclass
+class Result:
+    values: Tuple[Any, ...]
+    error: Optional[BaseException] = None
+
+    @staticmethod
+    def from_exception(e: BaseException) -> 'Result':
+        return Result(values=(), error=e)
+    
+    def to_exception(self) -> Optional[BaseException]:
+        if self.error is not None:
+            return self.error
+        return None
+    
+    def raise_if_error(self):
+        if self.error is not None:
+            raise self.error
+    
+    def to_values(self) -> Tuple[Any, ...]:
+        if self.error is not None:
+            raise self.to_exception()
+        return self.values
+
+@dataclass
+class TransactionResult(Result):
+    commit: bool = True
+
+    def to_result(self) -> Result:
+        return Result(values=self.values, error=self.error)
+    
+    @staticmethod
+    def from_return(value: Any) -> 'TransactionResult':
+        if isinstance(value, TransactionResult):
+            return value
+        if isinstance(value, Result):
+            return TransactionResult(values=value.values, error=value.error, commit=True)
+        if isinstance(value, tuple):
+            return TransactionResult(values=value, commit=True)
+        return TransactionResult(values=(value,), commit=True)
+
 
 
 class Database:
@@ -127,6 +170,12 @@ class Database:
     @property
     def data_file(self):
         return self._connection.data_file
+    
+    def refresh_caches(self):
+        """Refresh all table caches under DB lock."""
+        with self._connection._lock:
+            for table in self.tables.values():
+                table._refresh_cache()
 
     def validate_cache_hashes(self):
         """Under DB lock: for each table, copy current cache, refresh it, compute MD5 hashes and
@@ -147,33 +196,36 @@ class Database:
                     changed.append(name)
         return changed
 
-    def execute_in_transaction(self, function):
+    def execute_in_transaction(self, function) -> Result:
         """Run callable `function` inside a single DB transaction/connection under the DB lock.
-
-        Commits on success, rolls back on exception and refreshes all table caches
-        before re-raising the exception.
+        Respects TransactionResult.commit if returned by 'function'. Otherwise commits on success, rolls back on exception
+        refreshes all table caches on rollbacks.
         """
         with self._connection._lock:
-            token = self._connection.begin_transaction()
+            token = None
             try:
+                token = self._connection.begin_transaction()
                 result = function()
-            except Exception:
+                transaction_result = TransactionResult.from_return(result)
+
+                self._connection.end_transaction(token, commit=transaction_result.commit)
+                if not transaction_result.commit:
+                    self.refresh_caches()
+                return transaction_result.to_result()
+                    
+            except Exception as e:
                 try:
                     self._connection.end_transaction(token, commit=False)
                 finally:
-                    for table in self.tables.values():
-                        try:
-                            table._refresh_cache()
-                        except Exception:
-                            pass
-                raise
-            else:
-                self._connection.end_transaction(token, commit=True)
-                return result
+                    self.refresh_caches()
+                return Result.from_exception(e)
 
 
 def get_prods():
     return Container.get(Database).prods
+
+def handle_result(result: Result,*args, **kwargs):
+    return result.to_values()
 
 
 def db_transaction(func):
@@ -181,7 +233,9 @@ def db_transaction(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         db = Container.get(Database)
-        return db.execute_in_transaction(lambda: func(*args, **kwargs))
+        result = db.execute_in_transaction(lambda: func(*args, **kwargs))
+        return handle_result(result, *args, **kwargs)
+
     return wrapper
 
 def get_trans():

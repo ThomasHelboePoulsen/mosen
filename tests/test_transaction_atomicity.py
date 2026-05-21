@@ -110,7 +110,7 @@ class TestMixedSetAndAppendInSingleTransaction:
             raise Exception("fail after mixed ops")
         
         with pytest.raises(Exception):
-            db.execute_in_transaction(tx_body)
+            db.execute_in_transaction(tx_body).raise_if_error()
         
         # Assert - nothing committed
         con = sqlite3.connect(db.data_file)
@@ -141,7 +141,7 @@ class TestCacheMatchesDbAfterRollback:
             raise Exception("crash after append")
         
         with pytest.raises(Exception):
-            db.execute_in_transaction(tx_body)
+            db.execute_in_transaction(tx_body).raise_if_error()
         
         # Assert - cache matches initial state (rollback happened)
         final_cache = db._product_table.get().to_dict(orient='records')

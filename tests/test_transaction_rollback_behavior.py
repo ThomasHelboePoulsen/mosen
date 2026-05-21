@@ -30,7 +30,7 @@ def test_execute_in_transaction_rolls_back_on_exception(test_db):
         raise RuntimeError('simulated crash')
 
     with pytest.raises(RuntimeError):
-        db.execute_in_transaction(tx_body)
+        db.execute_in_transaction(tx_body).raise_if_error()
 
     # Assert - DB must not contain the row and cache must reflect that
     con = sqlite3.connect(db.data_file)
@@ -85,7 +85,7 @@ def test_set_then_error_between_sets_rolls_back(test_db):
         db._product_table.set([row2])
 
     with pytest.raises(Exception):
-        db.execute_in_transaction(tx_body)
+        db.execute_in_transaction(tx_body).raise_if_error()
 
     # Assert - neither row should be persisted
     con = sqlite3.connect(db.data_file)
@@ -133,7 +133,8 @@ def test_append_then_error_between_appends_rolls_back(test_db):
         db._product_table.append([row2])
 
     with pytest.raises(Exception):
-        db.execute_in_transaction(tx_body)
+        db.execute_in_transaction(tx_body).raise_if_error()
+
 
     # Assert - neither row should be persisted
     con = sqlite3.connect(db.data_file)
