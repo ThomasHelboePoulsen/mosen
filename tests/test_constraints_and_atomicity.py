@@ -12,7 +12,7 @@ import sqlite3
 from threading import Thread
 
 from src.container import Container
-from src.database.data_connection import Database, db_transaction
+from src.database.data_connection import Database, db_transaction_raises
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ class TestExceptionBasedRollback:
         db = test_db
         
         try:
-            @db_transaction
+            @db_transaction_raises
             def write_then_fail():
                 db._product_table.append([
                     {'barcode': '120', 'name': 'ShouldRollback', 'price': '1.00', 'category': 'Test', 'current_stock': '1', 'initial_stock': '1'}
@@ -147,7 +147,7 @@ class TestExceptionBasedRollback:
         db = test_db
         
         def worker(barcode, name):
-            @db_transaction
+            @db_transaction_raises
             def write():
                 db._product_table.append([
                     {
@@ -190,7 +190,7 @@ class TestMultiTableAtomicity:
         """Write to product table, then user table - both should persist."""
         db = test_db
         
-        @db_transaction
+        @db_transaction_raises
         def write_both():
             # Write product
             db._product_table.append([
@@ -216,7 +216,7 @@ class TestMultiTableAtomicity:
         db = test_db
         
         try:
-            @db_transaction
+            @db_transaction_raises
             def write_then_fail():
                 # Write product (valid)
                 db._product_table.append([
@@ -238,7 +238,7 @@ class TestMultiTableAtomicity:
         """Write to product, user, and temporary table - all succeed."""
         db = test_db
         
-        @db_transaction
+        @db_transaction_raises
         def write_three():
             db._product_table.append([
                 {'barcode': '230', 'name': 'Prod3', 'price': '3.00', 'category': 'Test', 'current_stock': '1', 'initial_stock': '1'}
@@ -268,7 +268,7 @@ class TestMultiTableAtomicity:
         db = test_db
         
         try:
-            @db_transaction
+            @db_transaction_raises
             def write_three_fail():
                 db._product_table.append([
                     {'barcode': '240', 'name': 'Prod4', 'price': '4.00', 'category': 'Test', 'current_stock': '1', 'initial_stock': '1'}
@@ -311,7 +311,7 @@ class TestMultiTableAtomicity:
         
         # Try multi-table write that fails
         try:
-            @db_transaction
+            @db_transaction_raises
             def write_fail():
                 db._product_table.append([
                     {'barcode': '251', 'name': 'NewProd', 'price': '2.00', 'category': 'Test', 'current_stock': '1', 'initial_stock': '1'}

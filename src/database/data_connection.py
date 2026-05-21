@@ -12,32 +12,12 @@ from src.database.tables.temporary import TemporaryTable
 from src.database.tables.user import UserTable
 from src.database.tables.transaction import TransactionTable
 from src.database.connection import Connection
+from src.error_handler import Result
 
 from dataclasses import dataclass
-from typing import Any, Tuple, Optional
+from typing import Any
 
-@dataclass
-class Result:
-    values: Tuple[Any, ...]
-    error: Optional[BaseException] = None
 
-    @staticmethod
-    def from_exception(e: BaseException) -> 'Result':
-        return Result(values=(), error=e)
-    
-    def to_exception(self) -> Optional[BaseException]:
-        if self.error is not None:
-            return self.error
-        return None
-    
-    def raise_if_error(self):
-        if self.error is not None:
-            raise self.error
-    
-    def to_values(self) -> Tuple[Any, ...]:
-        if self.error is not None:
-            raise self.to_exception()
-        return self.values
 
 @dataclass
 class TransactionResult(Result):
@@ -129,11 +109,8 @@ class Database:
     
     def try_upload_values(self, data: list, table: str) -> tuple[bool, list]:
         """Upload data to table, return (success, bad_rows). On failure, no data is uploaded."""
-        try:
-            result, bad_rows = self.get_table(table).set(data)
-            return result == "success", bad_rows
-        except:
-            return False, []
+        result, bad_rows = self.get_table(table).set(data)
+        return result == "success", bad_rows
     
     def barcode_exists(self, barcode: int, partition: BarcodePartition) -> bool:
         """Check if barcode exists in the relevant table based on partition."""
@@ -228,15 +205,31 @@ def handle_result(result: Result,*args, **kwargs):
     return result.to_values()
 
 
-def db_transaction(func):
+def db_transaction_raises(func):
     """Decorator: run the wrapped callable inside a DB transaction and re-raise exceptions."""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         db = Container.get(Database)
         result = db.execute_in_transaction(lambda: func(*args, **kwargs))
-        return handle_result(result, *args, **kwargs)
+        return result.to_values()
 
     return wrapper
+
+def db_transaction_result(_func=None, *, fallback_values: tuple[Any, ...] | None = None):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            db = Container.get(Database)
+            result = db.execute_in_transaction(lambda: func(*args, **kwargs))
+            if result.error is not None and fallback_values is not None:
+                return Result(values=fallback_values, error=result.error)
+            return result
+        return wrapper
+
+    if _func is not None:
+        return decorator(_func)
+    return decorator
+
 
 def get_trans():
     return Container.get(Database).transactions

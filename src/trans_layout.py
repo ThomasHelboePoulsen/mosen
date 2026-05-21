@@ -4,8 +4,9 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from src.components import get_barcode, get_table
-from src.error_handler import append_error
+from src.error_handler import append_error, callback_with_error_queue
 from src.database.data_connection import (
+    db_transaction_result,
     get_prods,
     get_trans,
     get_users,
@@ -163,39 +164,33 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close,er
 def strings_map_to_same_number(s1,s2):
     return s1.isdecimal() and s2.isdecimal() and int(s1) == int(s2)
 
-@callback(
+@callback_with_error_queue(2,
     Output("show_current_prods", "children"),
     Output("prod_barcode", "value"),
-    Output("error-queue", "data", allow_duplicate=True),
     Input("prod_barcode", "n_submit"),
     State("prod_barcode", "value"),
     State("new_trans_inp", "value"),
-    State("error-queue", "data"),
-    prevent_initial_call=True,
 )
-def new_trans(trigger, barcode, user_barcode,error_queue):
-    errors = lambda msg: append_error(error_queue, msg=str(msg), src=new_trans.__name__)
+@db_transaction_result(fallback_values=(no_update, ""))
+def new_trans(trigger, barcode, user_barcode):
+
     prods = get_prods()
     current = get_current_trans()
     barcode = get_barcode(barcode)
     if (not str(barcode).isdigit()) or len(str(barcode)) < 1:
-        return no_update, "", errors(f"Invalid barcode: \"{barcode}\"")
+        raise ValueError(f"Invalid barcode: {barcode}")
     user_barcode = get_barcode(user_barcode)
     if barcode == user_barcode:
-        return (
-            [html.H1("Products: ")],
-            "",
-            no_update
-        )
+        return ( [html.H1("Products: ")], "" )
     elif int(barcode) == 0:
         if len(current) == 0:
-            return no_update, "", errors("You can't remove products before adding any")
+            raise ValueError("You can't remove products before adding any")
         last_barcode = current.iloc[len(current) - 1]["barcode_prod"]
         indecies = current[current["barcode_prod"] == str(last_barcode)].index
         current.drop(indecies, inplace=True)
     elif len(barcode) < 3:
         if len(current) == 0:
-            return no_update, "", errors("You can't use a multiplier without choosing product")
+            raise ValueError("You can't use a multiplier without choosing product")
         last_barcode = current.iloc[len(current) - 1]["barcode_prod"]
         current_amount = len(current[current["barcode_prod"] == str(last_barcode)])
         addition = int(barcode) if current_amount > 1 else int(barcode) - 1
@@ -207,15 +202,16 @@ def new_trans(trigger, barcode, user_barcode,error_queue):
             current = pd.concat([current, pd.DataFrame(data)], ignore_index=True)
     elif str(int(barcode)) not in list(prods["barcode"]):
         not_found = "Product" if int(barcode) < 1000 else "User"
-        return no_update, "", errors(f"{not_found} not found: {barcode}")
+        raise ValueError(f"{not_found} not found: {barcode}")
     else:
         try:
             product = prods[prods["barcode"] == str(barcode)]
         except:
-            return no_update, "", no_update, errors(f"Product not found: {barcode}")
+            raise ValueError(f"Product not found: {barcode}")
         name = str(product["name"].values[0])
         new_transaction = pd.DataFrame([{"barcode_prod": barcode, "name": name}])
         current = pd.concat([current, new_transaction], ignore_index=True)
+
     display_text = [html.H1("Products: ")]
     for current_barcode in current["barcode_prod"].unique():
         prod_name = str(
@@ -226,7 +222,7 @@ def new_trans(trigger, barcode, user_barcode,error_queue):
 
     update_current_trans(current)
 
-    return display_text, "", no_update
+    return display_text, ""
 
 
 @callback(

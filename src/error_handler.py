@@ -1,6 +1,10 @@
 from dash import Dash, html, dcc, Input, Output, State, Patch, callback, no_update, clientside_callback
 from datetime import datetime, timedelta
 import uuid
+import functools
+from typing import Any, Tuple, Optional
+from dataclasses import dataclass
+
 
 ERROR_QUEUE_ID = "error-queue"
 ERROR_COUNT_ID = "error-count"
@@ -123,3 +127,98 @@ clientside_callback(
     Input(ERROR_QUEUE_ID, "data"),
     State(ERROR_COUNT_ID, "data"),
 )
+
+
+def _callback_result_to_outputs(value: Any, num_outputs: int):
+    if num_outputs == 0:
+        return ()
+
+    if num_outputs == 1:
+        return (value,)
+
+    if isinstance(value, list):
+        value = tuple(value)
+
+    if not isinstance(value, tuple):
+        raise ValueError(
+            f"Expected {num_outputs} outputs, got {type(value).__name__}"
+        )
+
+    if len(value) != num_outputs:
+        raise ValueError(f"Expected {num_outputs} outputs, got {len(value)}")
+
+    return value
+
+
+def callback_with_error_queue(num_outputs: int, *callback_args, **callback_kwargs):
+    """ `num_outputs` counts the normal callback outputs only.
+    returns no_update on raise
+    Preserves result.values on result.error, but adds result.errror to queue"""
+    if num_outputs < 0:
+        raise ValueError("num_outputs must be non-negative")
+
+    callback_kwargs.setdefault("prevent_initial_call", True)
+
+    def decorator(func):
+        normal_outputs = callback_args[:num_outputs]
+        remainder = callback_args[num_outputs:]
+
+        @callback(
+            *normal_outputs,
+            Output(ERROR_QUEUE_ID, "data", allow_duplicate=True),
+            *remainder,
+            State(ERROR_QUEUE_ID, "data"),
+            **callback_kwargs,
+        )
+        @functools.wraps(func)
+        def wrapper(*args):
+            callback_args_only = args[:-1]
+            error_queue = args[-1] 
+            err = lambda e : append_error(
+                error_queue,
+                msg=str(e),
+                src=func.__name__,
+            )
+
+            try:
+                error_update = no_update
+                result = func(*callback_args_only)
+                if isinstance(result, Result):
+                    if result.error is not None:
+                        error_update = err(result.error)
+                    result = result.values
+                callback_outputs = _callback_result_to_outputs(result, num_outputs)
+                return (*callback_outputs, error_update)
+            except Exception as e:
+                if error_update is not no_update:
+                    return (*([no_update] * num_outputs), append_error(error_update, msg=str(e), src=func.__name__))
+                return (*([no_update] * num_outputs), err(e))
+
+        return wrapper
+
+    return decorator
+
+
+
+@dataclass
+class Result:
+    values: Tuple[Any, ...]
+    error: Optional[BaseException] = None
+
+    @staticmethod
+    def from_exception(e: BaseException) -> 'Result':
+        return Result(values=(), error=e)
+    
+    def to_exception(self) -> Optional[BaseException]:
+        if self.error is not None:
+            return self.error
+        return None
+    
+    def raise_if_error(self):
+        if self.error is not None:
+            raise self.error
+    
+    def to_values(self) -> Tuple[Any, ...]:
+        if self.error is not None:
+            raise self.to_exception()
+        return self.values

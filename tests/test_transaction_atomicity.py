@@ -4,7 +4,7 @@ import sqlite3
 from threading import Thread
 
 from src.container import Container
-from src.database.data_connection import Database, db_transaction
+from src.database.data_connection import Database, db_transaction_raises
 
 
 @pytest.fixture
@@ -25,11 +25,11 @@ class TestNestedDecoratorCalls:
         row1 = {'barcode': '300', 'name': 'D', 'price': '4.00', 'category': 'A', 'current_stock': '1', 'initial_stock': '1'}
         row2 = {'barcode': '301', 'name': 'E', 'price': '5.00', 'category': 'B', 'current_stock': '1', 'initial_stock': '1'}
         
-        @db_transaction
+        @db_transaction_raises
         def inner_write():
             db._product_table.set([row1])
         
-        @db_transaction
+        @db_transaction_raises
         def outer_write():
             inner_write()
             db._product_table.append([row2])
@@ -50,11 +50,11 @@ class TestNestedDecoratorCalls:
         db = test_db
         row1 = {'barcode': '400', 'name': 'F', 'price': '6.00', 'category': 'C', 'current_stock': '1', 'initial_stock': '1'}
         
-        @db_transaction
+        @db_transaction_raises
         def inner_write():
             db._product_table.set([row1])
         
-        @db_transaction
+        @db_transaction_raises
         def outer_write_fails():
             inner_write()
             raise ValueError("outer fails after inner")
@@ -167,7 +167,7 @@ class TestConcurrentWriteAtomicity:
         
         def worker(worker_id):
             try:
-                @db_transaction
+                @db_transaction_raises
                 def append_rows():
                     rows = [
                         {
@@ -214,7 +214,7 @@ class TestConcurrentWriteAtomicity:
         
         def worker(worker_id):
             try:
-                @db_transaction
+                @db_transaction_raises
                 def append_rows():
                     rows = [
                         {

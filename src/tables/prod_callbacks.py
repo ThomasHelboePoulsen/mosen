@@ -7,12 +7,13 @@ from src.database.data_connection import (
     get_trans,
     upload_values,
     update_values,
-    db_transaction,
+    db_transaction_raises,
 )
 from src.analytics.trans_calculations import get_currently_sold
 from src.analytics.product_calculations import calculate_waste
 from src.container import Container
-from src.database.data_connection import Database
+from src.database.data_connection import Database,TransactionResult
+from src.error_handler import callback_with_error_queue
 
 
 @callback(
@@ -49,16 +50,6 @@ def enable_confirm(inps, invalid_barcode):
     return True
 
 
-@callback(
-    Output("prod_table", "data"),
-    Output("edit_input", "value", allow_duplicate=True),
-    Input("confirm_prod", "n_clicks"),
-    Input("confirm_new_stock", "n_clicks"),
-    State({"type": "prod_input", "index": ALL}, "value"),
-    State("edit_input", "value"),
-    prevent_initial_call=True,
-)
-@db_transaction
 def add_row(n_clicks, stock_trigger, vals, edit_barcode):
     """add or edit a product. edit_barcode allows changing the barcode of a product, otherwise just upsert on barcode"""
     db = Container.get(Database)
@@ -78,16 +69,33 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
         data = pd.concat([data, pd.DataFrame([new_row])])
         success, bad_rows = db.try_upload_values(data, "prods") 
         if not success:
-             return no_update, no_update
+             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
 
     if is_barcode(edit_barcode, BarcodePartition.PRODUCT):
         trans = db.get_table("transactions").get()
         trans.loc[trans["barcode_prod"] == int(edit_barcode), "barcode_prod"] = int(
             vals[0]
         )
-        db.upload_values(trans, "transactions")
+        success, bad_rows = db.try_upload_values(trans, "transactions")
+        if not success:
+             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
 
     return table.get().to_dict(orient="records"), None
+
+
+@callback_with_error_queue(
+    2,
+    Output("prod_table", "data"),
+    Output("edit_input", "value", allow_duplicate=True),
+    Input("confirm_prod", "n_clicks"),
+    Input("confirm_new_stock", "n_clicks"),
+    State({"type": "prod_input", "index": ALL}, "value"),
+    State("edit_input", "value"),
+    prevent_initial_call=True,
+)
+@db_transaction_raises
+def add_row_callback(n_clicks, stock_trigger, vals, edit_barcode):
+    return add_row(n_clicks, stock_trigger, vals, edit_barcode)
 
 
 @callback(

@@ -4,7 +4,7 @@ import sqlite3
 from threading import Thread, Lock
 
 from src.container import Container
-from src.database.data_connection import Database, db_transaction
+from src.database.data_connection import Database, db_transaction_raises
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ class TestStressHighConcurrency:
         
         def worker(worker_id):
             try:
-                @db_transaction
+                @db_transaction_raises
                 def append_rows():
                     # Each worker appends 30 rows
                     rows = [
@@ -78,7 +78,7 @@ class TestStressHighConcurrency:
         
         def worker(worker_id):
             try:
-                @db_transaction
+                @db_transaction_raises
                 def append_rows():
                     # Use non-overlapping ranges so all rows are unique
                     rows = [
@@ -126,7 +126,7 @@ class TestStressHighConcurrency:
         
         def worker(worker_id):
             try:
-                @db_transaction
+                @db_transaction_raises
                 def append_rows():
                     rows = [
                         {
@@ -182,7 +182,7 @@ class TestStressHighConcurrency:
             try:
                 if worker_id % 2 == 0:
                     # Even workers: set() operation
-                    @db_transaction
+                    @db_transaction_raises
                     def do_set():
                         rows = [
                             {
@@ -200,7 +200,7 @@ class TestStressHighConcurrency:
                     do_set()
                 else:
                     # Odd workers: append() operation
-                    @db_transaction
+                    @db_transaction_raises
                     def do_append():
                         rows = [
                             {

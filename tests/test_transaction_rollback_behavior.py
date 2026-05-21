@@ -1,7 +1,8 @@
 import pytest
 import sqlite3
 from src.container import Container
-from src.database.data_connection import Database, db_transaction
+from src.database.data_connection import Database, db_transaction_raises, db_transaction_result
+from src.error_handler import Result
 
 @pytest.fixture
 def test_db(tmp_path):
@@ -53,7 +54,7 @@ def test_db_transaction_decorator_rolls_back_and_refreshes_cache(test_db):
         'initial_stock': '3',
     }
 
-    @db_transaction
+    @db_transaction_raises
     def callback_that_crashes():
         db._product_table.set([product_row])
         raise ValueError('boom in callback')
@@ -70,6 +71,18 @@ def test_db_transaction_decorator_rolls_back_and_refreshes_cache(test_db):
     con.close()
     assert count == 0
     assert len(db._product_table.get()) == 0
+
+
+def test_db_transaction_result_uses_fallback_values_on_exception(test_db):
+    @db_transaction_result(fallback_values=("fallback", "reset"))
+    def callback_that_crashes():
+        raise ValueError('boom')
+
+    result = callback_that_crashes()
+
+    assert isinstance(result, Result)
+    assert result.values == ("fallback", "reset")
+    assert isinstance(result.error, ValueError)
 
 def test_set_then_error_between_sets_rolls_back(test_db):
     # Arrange
