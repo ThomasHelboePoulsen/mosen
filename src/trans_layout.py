@@ -86,15 +86,12 @@ def trans_modal():
     return modal
 
 
-@callback(
+@callback_with_error_queue(1,
     Output("trans_graph", "figure"),
-    Output("error-queue", "data", allow_duplicate=True),
     Input("new_trans_inp", "n_submit"),
     State("new_trans_inp", "value"),
-    State("error-queue", "data"),
-    prevent_initial_call=True
 )
-def get_transactions(trigger, barcode,error_queue):
+def get_transactions(trigger, barcode):
     if trigger is None:
         return no_update, no_update
     users = get_users()
@@ -105,11 +102,10 @@ def get_transactions(trigger, barcode,error_queue):
     )
     user_barcodes = list(map(str, users["barcode"]))
     if not (str(barcode) in user_barcodes):
-        errors = append_error(error_queue, msg="User not found", src=get_transactions.__name__)
-        return no_update, errors
+        raise ValueError("User not found")
     user_trans = transactions[transactions["barcode_user"] == str(barcode)]
     trans_data = [user_trans["name"].value_counts().to_dict()]
-    return px.bar(trans_data), no_update
+    return px.bar(trans_data)
 
 
 @callback_with_error_queue(3,
@@ -181,13 +177,13 @@ def strings_map_to_same_number(s1,s2):
     State("new_trans_inp", "value"),
 )
 @db_transaction_result(fallback_values=(no_update, ""))
-def new_trans(trigger, barcode, user_barcode):
+def new_trans(trigger, _barcode, user_barcode):
 
     prods = get_prods()
     current = get_current_trans()
-    barcode = get_barcode(barcode)
+    barcode = get_barcode(_barcode)
     if (not str(barcode).isdigit()) or len(str(barcode)) < 1:
-        raise ValueError(f"Invalid barcode: {barcode}")
+        raise ValueError(f"Invalid barcode: {_barcode}")
     user_barcode = get_barcode(user_barcode)
     if barcode == user_barcode:
         return ( [html.H1("Products: ")], "" )
@@ -240,31 +236,31 @@ def new_trans(trigger, barcode, user_barcode):
     State("new_trans_inp", "value"),
 )
 def show_balance(trigger, user_id):
-    if trigger is not None:
-        if not get_show_bill():
-            users = get_users()
-            try:
-                user = str(users[users["barcode"] == str(user_id)]["name"].values[0])
-            except:
-                return no_update
-            return str(user)
-        else:
-            trans = get_trans()
-            users = get_users()
-            prods = get_prods()
-            price_dict = {str(p["barcode"]): p["price"] for _, p in prods.iterrows()}
-            trans["price"] = trans["barcode_prod"].apply(
-                lambda x: price_dict[str(x)] if str(x) in list(price_dict.keys()) else 0
-            )
+    if trigger is None:
+        return no_update
+    if not get_show_bill():
+        users = get_users()
+        try:
+            user = str(users[users["barcode"] == str(user_id)]["name"].values[0])
+        except:
+            return no_update
+        return str(user)
+    else:
+        trans = get_trans()
+        users = get_users()
+        prods = get_prods()
+        price_dict = {str(p["barcode"]): p["price"] for _, p in prods.iterrows()}
+        trans["price"] = trans["barcode_prod"].apply(
+            lambda x: price_dict[str(x)] if str(x) in list(price_dict.keys()) else 0
+        )
 
-            user_waste = 0 if len(users) == 0 else get_waste() / len(users)
-            user_id = get_barcode(user_id)
-            try:
-                user = str(users[users["barcode"] == str(user_id)]["name"].values[0])
-            except:
-                return no_update
-            user_balance = sum(
-                map(float, trans[trans["barcode_user"] == str(user_id)]["price"])
-            )
-            return f"{user} - Current bill is approximately: {max(0, round(user_balance + user_waste))}"
-    return no_update
+        user_waste = 0 if len(users) == 0 else get_waste() / len(users)
+        user_id = get_barcode(user_id)
+        try:
+            user = str(users[users["barcode"] == str(user_id)]["name"].values[0])
+        except:
+            return no_update
+        user_balance = sum(
+            map(float, trans[trans["barcode_user"] == str(user_id)]["price"])
+        )
+        return f"{user} - Current bill is approximately: {max(0, round(user_balance + user_waste))}"
