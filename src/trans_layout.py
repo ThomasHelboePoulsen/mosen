@@ -4,8 +4,12 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from src.components import get_barcode, get_table
-from src.error_handler import append_error, callback_with_error_queue
+from src.error_handler import append_error, callback_with_error_queue,Result
+from src.barcode import BarcodePartition, get_barcode as get_valid_barcode
+from src.container import Container
 from src.database.data_connection import (
+    Database,
+    db_transaction_raises,
     db_transaction_result,
     get_prods,
     get_trans,
@@ -108,58 +112,63 @@ def get_transactions(trigger, barcode,error_queue):
     return px.bar(trans_data), no_update
 
 
-@callback(
+@callback_with_error_queue(3,
     Output("new_trans_modal", "is_open"),
     Output("new_trans_inp", "value"),
     Output("prod_barcode", "value", allow_duplicate=True),
-    Output("bad_barcode_alert", "is_open"),
-    Output("error-queue", "data", allow_duplicate=True),
     Input("new_trans_inp", "n_submit"),
     Input("prod_barcode", "n_submit"),
     State("new_trans_inp", "value"),
     State("prod_barcode", "value"),
-    State("error-queue", "data"),
-    prevent_initial_call=True,
 )
-def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close,error_queue):
-    errors = lambda msg: append_error(error_queue, msg=str(msg), src=open_trans_modal.__name__)
-    users = get_users()
+def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
+    db = Container.get(Database)
+    clear_barcode_open = (no_update, "", no_update)
+    clear_barcode_close = (no_update, no_update, "")
     barcode_open = get_barcode(barcode_open)
     if barcode_open == "bad barcode":
-        return no_update, "", no_update, no_update, errors(f"Invalid barcode: {barcode_open}")
+        return Result(clear_barcode_open, ValueError("Invalid barcode"))
     barcode_close = get_barcode(barcode_close)
     if barcode_close == "bad barcode":
-        return no_update, no_update, "", no_update, errors(f"Invalid barcode: {barcode_close}")
-    user_barcodes = list(users["barcode"])
+        return Result(clear_barcode_close, ValueError("Invalid barcode"))
+    
     trigger = ctx.triggered_id
     if trigger == "new_trans_inp":
+        user_barcodes = list(db.get_table("users").get()["barcode"])    
         if len(user_barcodes) < 1:
-            return no_update, "", no_update, True, errors("No users exist")
+            return Result(clear_barcode_open, ValueError("No users exist"))
         if barcode_open is None or not barcode_open.isdecimal():
-            return no_update, "", no_update, False, errors("Empty barcode")
-        if str(int(barcode_open)) in user_barcodes:
+            return Result(clear_barcode_open, ValueError("Empty barcode"))
+        if int(barcode_open) in user_barcodes:
             reset_current_trans()
-            return True, no_update, "", False, no_update
-        return no_update, "", no_update, False, no_update #I couldn't provoke this branch when testing
+            return True, no_update, ""
+        return clear_barcode_open #I couldn't provoke this branch when testing
+    
     elif trigger == "prod_barcode" and strings_map_to_same_number(barcode_close,barcode_open):
-        prods = get_prods()
-        current = get_current_trans()
-        new_rows = pd.DataFrame(
-            [
-                {
-                    "barcode_user": barcode_open,
-                    "barcode_prod": row["barcode_prod"],
-                    "timestamp": str(datetime.now().strftime("%d/%m/%Y %H:%M:%S")),
-                }
-                for _, row in current.iterrows()
-            ]
-        )
-        add_result, bad_rows = add_transactions(new_rows)
-        if not add_result == "success":
-            return no_update, no_update, no_update, False, errors(f"Failed to add transactions due to the following bad rows: {bad_rows}")
-        return False, "", no_update, False, no_update
+        checkout_cart_to(barcode_close, db)
+        return False, "", no_update
 
-    return no_update, no_update, no_update, False, no_update
+    return no_update, no_update, no_update
+
+@db_transaction_raises
+def checkout_cart_to(user_barcode, db:Database):
+    if not db.barcode_exists(user_barcode, BarcodePartition.USER):
+        raise ValueError(f"User not found: {user_barcode}")
+    current = db._temporary_table.get()
+    new_rows = pd.DataFrame(
+        [
+            {
+                "barcode_user": user_barcode,
+                "barcode_prod": row["barcode_prod"],
+                "timestamp": str(datetime.now().strftime("%d/%m/%Y %H:%M:%S")),
+            }
+            for _, row in current.iterrows()
+        ]
+    )
+    add_result, bad_rows = db._transaction_table.append(new_rows)
+    if not add_result == "success":
+        raise ValueError(f"Failed to add transactions due to the following bad rows: {bad_rows}")
+
 
 def strings_map_to_same_number(s1,s2):
     return s1.isdecimal() and s2.isdecimal() and int(s1) == int(s2)

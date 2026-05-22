@@ -695,14 +695,6 @@ def layout_func():
             edit_modal(),
             top_user_chart_modal(),
             dcc.Store(id="update_settings"),
-            dbc.Alert(
-                "There are no users, ya dumb dumb!",
-                color="danger",
-                id="bad_barcode_alert",
-                is_open=False,
-                fade=True,
-                duration=4000,
-            ),
             dcc.Store(id="retain_focus_main", data=None),
             dcc.Store(id="retain_focus_prod", data=None),
             dcc.Interval(
