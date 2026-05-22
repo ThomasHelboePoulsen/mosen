@@ -816,6 +816,7 @@ def toggle_checkboxes(n_clicks, current_values):
 def update_settings_layout(
     trigger, prods_trigger, user_trigger, reset_trigger, stock_trigger
 ):
+    #SHOULD TRIGGER ON SUCCESSFUL DB CHANGES, NOT BUTTON CLICKS
     time.sleep(1)
     return (
         user_settings_layout(),

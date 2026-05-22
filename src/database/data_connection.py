@@ -112,6 +112,13 @@ class Database:
         result, bad_rows = self.get_table(table).set(data)
         return result == "success", bad_rows
     
+    def upload_values_raises(self, data: list, table: str) -> tuple[bool, list]:
+        """Upload data to table, return (success, bad_rows). On failure, no data is uploaded."""
+        success, bad_rows = self.try_upload_values(data, table)
+        if not success:
+            raise ValueError(f"Failed to upload data to {table}. Bad rows: {bad_rows}")
+
+    
     def barcode_exists(self, barcode: int, partition: BarcodePartition) -> bool:
         """Check if barcode exists in the relevant table based on partition."""
         if not is_barcode(barcode, partition):
@@ -321,7 +328,10 @@ def update_values(password=None, show_bill=None, waste=None, backup_time=None, c
         if value is None:
             continue
         settings_row[key] = str(value)
-    db._settings_table.set([settings_row])
+    result, bad_rows = db._settings_table.set([settings_row])
+    success = result == "success"
+    if not success:
+         raise ValueError(f"Failed to update settings. Bad rows: {bad_rows}")
 
 def reset_all_tables():
     con, cur = Container.get(Database).init()

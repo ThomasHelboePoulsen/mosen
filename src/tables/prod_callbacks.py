@@ -2,18 +2,15 @@ import pandas as pd
 from dash import callback, Output, Input, State, html, ctx, ALL, MATCH, no_update
 from src.barcode import BarcodePartition, is_barcode
 from src.database.data_connection import (
-    get_users,
     get_prods,
     get_trans,
-    upload_values,
     update_values,
     db_transaction_raises,
 )
-from src.analytics.trans_calculations import get_currently_sold
 from src.analytics.product_calculations import calculate_waste
 from src.container import Container
-from src.database.data_connection import Database,TransactionResult
-from src.error_handler import callback_with_error_queue
+from src.database.data_connection import Database
+from src.error_handler import callback_with_error_queue, Result
 
 
 @callback(
@@ -117,7 +114,7 @@ def validate_barcode_prod(value, edit_barcode):
     return False
 
 
-@callback(
+@callback_with_error_queue(1,
     Output("new_stock_modal", "is_open"),
     Input("open_update_stock", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
@@ -125,15 +122,25 @@ def validate_barcode_prod(value, edit_barcode):
 )
 def open_stock(trigger_open, trigger_close, inps):
     trigger = ctx.triggered_id
-    if trigger == "open_update_stock":
+    if trigger == "open_update_stock" and trigger_open:
         return True
-    if trigger == "confirm_new_stock":
-        prods = get_prods()
-        if None in inps or any(int(a) < 0 for a in inps): #While current stock can become negative, if someone scans too much, i don't think you would ever set it as negative.
-            return no_update
-        prods["current_stock"] = [str(val) for val in list(inps)]
-        upload_values(prods, "prods")
-        waste = calculate_waste()
-        update_values(waste=waste)
-        return False
+    if trigger == "confirm_new_stock" and trigger_close:
+        try:
+            confirm_new_stock(inps)
+            return False
+        except Exception as e:
+            #close on error, as clicking the button will do that anyway...
+            #can be fixed by changing update_settings_layout to triggero on succesful db changes instead of button presses.
+            return Result(False, error=e) 
     return no_update
+
+@db_transaction_raises
+def confirm_new_stock(inps):
+    db = Container.get(Database)
+    prods = db.get_table("prods").get()
+    if None in inps or any(int(a) < 0 for a in inps): #While current stock can become negative, if someone scans too much, i don't think you would ever set it as negative.
+        raise ValueError("You cannot set a negative stock value or leave it empty.")
+    prods["current_stock"] = [int(val) for val in list(inps)]
+    db.upload_values_raises(prods, "prods")
+    waste = calculate_waste()
+    update_values(waste=waste)

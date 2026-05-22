@@ -4,7 +4,7 @@ from unittest.mock import patch
 from dash import no_update
 from src.container import Container
 from src.database.data_connection import Database, get_prods, get_trans, upload_values, add_transactions, update_values
-from src.tables.prod_callbacks import add_row, validate_barcode_prod, open_prod_modal, open_stock
+from src.tables.prod_callbacks import add_row, validate_barcode_prod, open_prod_modal, open_stock, confirm_new_stock
 from src.analytics.product_calculations import calculate_waste
 
 
@@ -186,82 +186,61 @@ class TestOpenProdModal:
         assert is_open is False
 
 
-class TestOpenStock:
+class TestConfirmNewStock:
 
     @patch('src.tables.prod_callbacks.ctx')
-    def test_open_stock_updates_current_stock(self, mock_ctx, test_db):
+    def test_open_stock_ignores_open_trigger_without_click(self, mock_ctx, test_db):
         # Arrange
-        mock_ctx.triggered_id = "confirm_new_stock"
+        mock_ctx.triggered_id = "open_update_stock"
+
+        # Act
+        result = open_stock(0, None, [], [])
+
+        # Assert
+        assert result[0] is no_update
+        assert result[1] is no_update
+
+    def test_confirm_new_stock_updates_current_stock(self, test_db):
+        # Arrange
         prod_data = pd.DataFrame([
             {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
         ])
         upload_values(prod_data, "prods")
         
         # Act
-        result = open_stock(0, 1, [5])
+        result = confirm_new_stock([5])
         
         # Assert
         prods = get_prods()
         assert prods.iloc[0]["current_stock"] == "5"
+        assert result == (None,)
 
-    @patch('src.tables.prod_callbacks.ctx')
-    def test_open_stock_rejects_none_inputs(self, mock_ctx, test_db):
+    def test_confirm_new_stock_rejects_none_inputs(self, test_db):
         # Arrange
-        mock_ctx.triggered_id = "confirm_new_stock"
         prod_data = pd.DataFrame([
             {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
         ])
         upload_values(prod_data, "prods")
         
         # Act
-        result = open_stock(0, 1, [None])
+        with pytest.raises(ValueError, match="negative stock value"):
+            confirm_new_stock([None])
         
         # Assert
         prods = get_prods()
         assert prods.iloc[0]["current_stock"] == "10"
 
-    @patch('src.tables.prod_callbacks.ctx')
-    def test_open_stock_rejects_negative_inputs(self, mock_ctx, test_db):
+    def test_confirm_new_stock_rejects_negative_inputs(self, test_db):
         # Arrange
-        mock_ctx.triggered_id = "confirm_new_stock"
         prod_data = pd.DataFrame([
             {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
         ])
         upload_values(prod_data, "prods")
         
         # Act
-        result = open_stock(0, 1, [-5])
+        with pytest.raises(ValueError, match="negative stock value"):
+            confirm_new_stock([-5])
         
         # Assert
         prods = get_prods()
         assert prods.iloc[0]["current_stock"] == "10"
-
-    @patch('src.tables.prod_callbacks.ctx')
-    def test_open_stock_returns_false_on_success(self, mock_ctx, test_db):
-        # Arrange
-        mock_ctx.triggered_id = "confirm_new_stock"
-        prod_data = pd.DataFrame([
-            {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
-        ])
-        upload_values(prod_data, "prods")
-        
-        # Act
-        result = open_stock(0, 1, [5])
-        
-        # Assert
-        assert result is False
-
-    @patch('src.tables.prod_callbacks.ctx')
-    def test_open_stock_returns_no_update_on_validation_failure(self, mock_ctx, test_db):
-        # Arrange
-        mock_ctx.triggered_id = "confirm_new_stock"
-        prod_data = pd.DataFrame([
-            {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
-        ])
-        upload_values(prod_data, "prods")
-        
-        # Act
-        result = open_stock(0, 1, [None])
-        
-        # Assert
-        assert result is no_update
