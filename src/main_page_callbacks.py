@@ -2,6 +2,7 @@ from dash import Output, Input, State, callback, ctx, no_update, html, ALL, MATC
 import pandas as pd
 import plotly.express as px
 from src.database.data_connection import (
+    db_transaction_raises,
     get_prods,
     get_trans,
     get_users,
@@ -12,7 +13,7 @@ from src.database.data_connection import (
 )
 from src.analytics.trans_calculations import get_income
 from src.barcode_generator import generate_pdf
-from src.error_handler import append_error
+from src.error_handler import append_error, callback_with_error_queue
 from src.container import Container
 from src.database.data_connection import Database
 from src.analytics.overview_plot import create_overview
@@ -218,7 +219,7 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
     return no_update, no_update, no_update
 
 
-@callback(
+@callback_with_error_queue(6,
     Output("new_user_modal", "is_open", allow_duplicate=True),
     Output("new_prod_modal", "is_open", allow_duplicate=True),
     Output({"index": ALL, "type": "user_input"}, "value", allow_duplicate=True),
@@ -231,22 +232,25 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
+@db_transaction_raises
 def edit_new_data_modals(delete, edit, table, barcode):
     db = Container.get(Database)
-    user_col_count = len(db._user_table.columns)
-    prod_col_count = len(db._product_table.columns)
-    
+    user_table = db._user_table
+    prod_table = db._product_table
+    user_col_count = len(user_table.columns)
+    prod_col_count = len(prod_table.columns)
+
     trigger = ctx.triggered_id
     if trigger == "edit_modal_delete" and barcode is not None:
         if table == "users":
-            data = get_users()
+            data = user_table.get()
             other_table_data = no_update
         elif table == "prods":
-            data = get_prods()
+            data = prod_table.get()
             other_table_data = no_update
-        barcode_mask = data["barcode"].astype(str) == str(barcode)
+        barcode_mask = data["barcode"] == int(barcode)
         data = data[~barcode_mask].copy()
-        upload_values(data, table)
+        db.upload_values_raises(data, table)
         if table == "users":
             return (
                 no_update,
@@ -266,8 +270,8 @@ def edit_new_data_modals(delete, edit, table, barcode):
         )
     elif trigger == "edit_modal_edit" and barcode is not None:
         if table == "users":
-            data = get_users()
-            row = data[data["barcode"].astype(str) == str(barcode)]
+            data = user_table.get()
+            row = data[data["barcode"] == int(barcode)]
             if len(row) == 0:
                 return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
             row_dict = row.iloc[0].to_dict()
@@ -281,8 +285,8 @@ def edit_new_data_modals(delete, edit, table, barcode):
             ]
             return True, False, row_list, [no_update] * prod_col_count, no_update, no_update
         if table == "prods":
-            data = get_prods()
-            row = data[data["barcode"].astype(str) == str(barcode)]
+            data = prod_table.get()
+            row = data[data["barcode"] == int(barcode)]
             if len(row) == 0:
                 return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
             row = list(row.values[0])
