@@ -230,7 +230,7 @@ def new_trans(trigger, _barcode, user_barcode):
     return display_text, ""
 
 
-@callback(
+@callback_with_error_queue(1,
     Output("new_trans_user", "children"),
     Input("new_trans_inp", "n_submit"),
     State("new_trans_inp", "value"),
