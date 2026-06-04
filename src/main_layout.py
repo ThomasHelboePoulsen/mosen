@@ -32,6 +32,7 @@ from src.analytics.overview_plot import create_overview
 from src.components import get_upload, get_table
 from src import main_page_callbacks  # Register main page callbacks
 from src.tables import prod_callbacks  # Register product callbacks
+from src.tables import user_callbacks  # Register user callbacks
 from src.database.data_connection import (
     get_prods,
     get_trans,
@@ -44,10 +45,7 @@ from src.database.data_connection import (
     get_backup_interval_ms,
     get_cache_validation_interval_ms,
 )
-from src.tables.user_callbacks import init
 from src import cache_validation  # register cache validation callback
-
-users_init = init()
 
 
 def user_settings_layout():

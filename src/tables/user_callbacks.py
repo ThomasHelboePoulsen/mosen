@@ -1,14 +1,10 @@
 import pandas as pd
+from src.barcode import BarcodePartition, is_barcode
 from dash import callback, Output, Input, State, html, ctx, ALL, no_update
-from src.database.data_connection import upload_values, get_users, get_trans
+from src.database.data_connection import db_transaction_raises, upload_values, get_users, get_trans
 from src.container import Container
 from src.database.data_connection import Database
-    
-
-
-def init():
-    #TODO: Figure out what was supposed to happen here
-    pass
+from src.error_handler import callback_with_error_queue, Result
 
 
 @callback(
@@ -48,7 +44,7 @@ def enable_confirm(inps, invalid_barcode):
     return True
 
 
-@callback(
+@callback_with_error_queue(2,
     Output("user_table", "data"),
     Output("edit_input", "value", allow_duplicate=True),
     Input("confirm_user", "n_clicks"),
@@ -56,6 +52,10 @@ def enable_confirm(inps, invalid_barcode):
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
+def add_row_callback(n_clicks, vals, edit_barcode):
+    return add_row(n_clicks, vals, edit_barcode)
+
+@db_transaction_raises
 def add_row(n_clicks, vals, edit_barcode):
     db = Container.get(Database)
     table = db._user_table
@@ -63,30 +63,32 @@ def add_row(n_clicks, vals, edit_barcode):
     if n_clicks is None:
         return no_update, no_update
     if n_clicks > 0:
-        data = table.get_untyped()
+        data = table.get()
         
-        if edit_barcode is not None:
-            barcode_mask = data["barcode"].astype(str) == str(edit_barcode)
+        if db.barcode_exists(edit_barcode, BarcodePartition.USER):
+            barcode_mask = data["barcode"]== int(edit_barcode)
             if barcode_mask.any():
                 data = data[~barcode_mask].copy()
 
         new_row = {col.name: val for col, val in zip(table.columns, vals)}        
         new_row["is_guest"] = 1 if new_row.get("is_guest") else 0
-        
-        all_data_records = data.to_dict('records')
-        if not table.is_valid_single(new_row, all_data_records):
-            return no_update, no_update
-        
+
         data = pd.concat([data, pd.DataFrame([new_row])])
-        upload_values(data, "users")
+        success, bad_rows = db.try_upload_values(data, "users") 
+        if not success:
+             raise ValueError(f"Failed to upload user data. Bad rows: {bad_rows}")
 
-    if edit_barcode is not None and int(edit_barcode) > 999:
-        trans = get_trans()
-        trans_mask = trans["barcode_user"].astype(str) == str(edit_barcode)
+
+    if is_barcode(edit_barcode, BarcodePartition.USER):
+        trans = db._transaction_table.get()
+        trans_mask = trans["barcode_user"]== int(edit_barcode)
         trans.loc[trans_mask, "barcode_user"] = int(vals[0])
-        upload_values(trans, "transactions")
+        success, bad_rows = db.try_upload_values(trans, "transactions")
+        if not success:
+             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
 
-    return table.get_untyped().to_dict(orient="records"), None
+
+    return table.get().to_dict(orient="records"), None
 
 
 @callback(
