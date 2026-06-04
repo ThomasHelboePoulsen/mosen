@@ -28,7 +28,7 @@ import zipfile
 from datetime import datetime
 
 
-@callback(
+@callback_with_error_queue(1,
     Output("overview_graph", "figure"),
     Input("new_trans_modal", "is_open"),
     Input("graph_selection", "value"),
@@ -91,7 +91,7 @@ def show_new_upload(file):
         return no_update
 
 
-@callback(
+@callback_with_error_queue(1,
     Output({"index": MATCH, "type": "download_trigger"}, "data"),
     Input({"index": MATCH, "type": "download_trigger_btn"}, "n_clicks"),
 )
@@ -109,7 +109,7 @@ def download_tables(trigger):
     return dcc.send_data_frame(data, filename=f"{trigger}_data.csv", index=False)
 
 
-@callback(
+@callback_with_error_queue(2,
     Output("payments_modal", "is_open"),
     Output("payments_download", "data"),
     Input("export_payments_btn", "n_clicks"),
@@ -145,7 +145,7 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
     else:
         return no_update, no_update
 
-@callback(
+@callback_with_error_queue(1,
     Output("pdf_download", "data"),
     Input("export_barcodes_btn", "n_clicks"),
     prevent_initial_call=True,
@@ -298,7 +298,7 @@ def edit_new_data_modals(delete, edit, table, barcode):
         return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
 
 
-@callback(
+@callback_with_error_queue(1,
     Output("reset_data_modal", "is_open"),
     Input("reset_app", "n_clicks"),
     Input("delete_data_btn", "n_clicks"),
@@ -317,7 +317,7 @@ def reset_database(trigger, delete, cancel):
         return no_update
 
 
-@callback(
+@callback_with_error_queue(1,
     Output("backup_filename", "data"),
     Input("backup_interval", "n_intervals"),
     State("backup_interval", "interval"),

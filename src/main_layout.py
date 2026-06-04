@@ -27,7 +27,7 @@ from src.modals import (
     study_users_modal,
 )
 from src.trans_layout import trans_modal
-from src.error_handler import get_error_view_components,append_error
+from src.error_handler import get_error_view_components,append_error,callback_with_error_queue
 from src.analytics.overview_plot import create_overview
 from src.components import get_upload, get_table
 from src import main_page_callbacks  # Register main page callbacks
@@ -747,7 +747,7 @@ def open_settings(trigger, trigger_enter, password, error_queue):
         return False, no_update, append_error(error_queue,msg="Wrong Password", src="login")
     return False, no_update, no_update
 
-@callback(
+@callback_with_error_queue(2,
     Output("top_user_chart_modal", "is_open"),
     Output('products_selector', 'options'),
     Input("open_top_user_chart", "n_clicks"),
@@ -759,7 +759,7 @@ def open_report(trigger):
         return True, data.all_products
     return no_update, no_update
 
-@callback(
+@callback_with_error_queue(1,
     Output("top_user_chart", "figure"),
     Input("top_user_chart_modal", "is_open"),
     Input("products_selector", "value"),

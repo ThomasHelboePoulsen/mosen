@@ -202,6 +202,7 @@ def callback_with_error_queue(num_outputs: int, *callback_args, **callback_kwarg
 
 @dataclass
 class Result:
+    """To signal error while returning values"""
     values: Tuple[Any, ...]
     error: Optional[BaseException] = None
 

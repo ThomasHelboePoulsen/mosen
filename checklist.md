@@ -1,5 +1,6 @@
 TO DO LIST
- - [ ] Go through styling of the app, make it pretty
+ - [ ] Fix the admin login (probably just a callback that isnt registered anymore)
+ - [ ] Do some better waste sharing
  - [ ] Password recovery
 
 
