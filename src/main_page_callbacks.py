@@ -2,7 +2,9 @@ from dash import Output, Input, State, callback, ctx, no_update, html, ALL, MATC
 import pandas as pd
 import plotly.express as px
 from src.database.data_connection import (
+    TransactionResult,
     db_transaction_raises,
+    db_transaction_result,
     get_prods,
     get_trans,
     get_users,
@@ -39,7 +41,7 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     return create_overview(graph_col, average)
 
 
-@callback(
+@callback_with_error_queue(5,
     Output("update_settings", "data"),
     Output("bad_password_alert", "is_open"),
     Output("bad_data_alert", "is_open"),
@@ -51,6 +53,7 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     Input({"index": ALL, "type": "database_upload"}, "id"),
     State("settings_password", "value"),
 )
+@db_transaction_result
 def update_settings(pass_trigger, show_bill, db_tables, table_ids, password):
     if (trigger := ctx.triggered_id) is None:
         return None, no_update, no_update, [no_update] * 3, no_update
@@ -63,7 +66,8 @@ def update_settings(pass_trigger, show_bill, db_tables, table_ids, password):
         return None, no_update, no_update, [no_update] * 3, True
 
     bad_rows_list = [[], [], []]
-    open_warning_data = False
+    open_warning_data = False          
+    db = Container.get(Database)
     for i, table in enumerate(db_tables):
         if table is None:
             continue
@@ -71,10 +75,9 @@ def update_settings(pass_trigger, show_bill, db_tables, table_ids, password):
         content = base64.b64decode(content_string)
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
         if len(df) > 0:
-            response, bad_rows = upload_values(df, table_ids[i]["index"])
-            open_warning_data = False if response == "success" else True
+            open_warning_data, bad_rows = db.try_upload_values(df, table_ids[i]["index"])
             bad_rows_list[i] = bad_rows
-    return True, open_warning_password, open_warning_data, bad_rows_list, False
+    return TransactionResult((True, open_warning_password, open_warning_data, bad_rows_list, False), commit=open_warning_data)
 
 
 @callback(

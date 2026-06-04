@@ -264,7 +264,7 @@ def bad_rows_mdl():
     tables = ["users", "prods", "transactions"]
     table_defs = [
         html.P(
-            "The following bad rows were detected in your upload. You can edit them manually, and reupload the file, if the below data is not what you wanted."
+            "Upload aborted. The following bad rows were detected in your upload. You can edit them manually, and reupload"
         )
     ]
     for table in tables:
