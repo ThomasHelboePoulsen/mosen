@@ -153,7 +153,8 @@ def _callback_result_to_outputs(value: Any, num_outputs: int):
 def callback_with_error_queue(num_outputs: int, *callback_args, **callback_kwargs):
     """ `num_outputs` counts the normal callback outputs only.
     returns no_update on raise
-    Preserves result.values on result.error, but adds result.errror to queue"""
+    Preserves result.values on result.error, but adds result.errror to queue
+    WARNING: use sparringly as it can mess with the DASH callback graph and make some unrelated callbacks not fire at all"""
     if num_outputs < 0:
         raise ValueError("num_outputs must be non-negative")
 

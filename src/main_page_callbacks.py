@@ -28,7 +28,7 @@ import zipfile
 from datetime import datetime
 
 
-@callback_with_error_queue(1,
+@callback(
     Output("overview_graph", "figure"),
     Input("new_trans_modal", "is_open"),
     Input("graph_selection", "value"),
@@ -77,7 +77,7 @@ def update_settings(pass_trigger, show_bill, db_tables, table_ids, password):
         if len(df) > 0:
             open_warning_data, bad_rows = db.try_upload_values(df, table_ids[i]["index"])
             bad_rows_list[i] = bad_rows
-    return TransactionResult((True, open_warning_password, open_warning_data, bad_rows_list, False), commit=open_warning_data)
+    return TransactionResult((True, open_warning_password, open_warning_data, bad_rows_list, False), commit=not open_warning_data)
 
 
 @callback(
@@ -91,7 +91,7 @@ def show_new_upload(file):
         return no_update
 
 
-@callback_with_error_queue(1,
+@callback(
     Output({"index": MATCH, "type": "download_trigger"}, "data"),
     Input({"index": MATCH, "type": "download_trigger_btn"}, "n_clicks"),
 )

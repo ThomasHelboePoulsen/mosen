@@ -747,7 +747,7 @@ def open_settings(trigger, trigger_enter, password, error_queue):
         return False, no_update, append_error(error_queue,msg="Wrong Password", src="login")
     return False, no_update, no_update
 
-@callback_with_error_queue(2,
+@callback(
     Output("top_user_chart_modal", "is_open"),
     Output('products_selector', 'options'),
     Input("open_top_user_chart", "n_clicks"),
@@ -759,7 +759,7 @@ def open_report(trigger):
         return True, data.all_products
     return no_update, no_update
 
-@callback_with_error_queue(1,
+@callback(
     Output("top_user_chart", "figure"),
     Input("top_user_chart_modal", "is_open"),
     Input("products_selector", "value"),
