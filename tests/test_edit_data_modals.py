@@ -50,7 +50,7 @@ class TestDeleteUserByBarcode:
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_delete"
-        user_col_count = len(temp_db._user_table.columns)
+        user_col_count = 5
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -74,7 +74,7 @@ class TestDeleteProductByBarcode:
         # Arrange
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_delete"
-        user_col_count = len(temp_db._user_table.columns)
+        user_col_count = 5
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -118,7 +118,7 @@ class TestEditBranch:
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_edit"
-        user_col_count = len(temp_db._user_table.columns)
+        user_col_count = 5
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -178,7 +178,7 @@ class TestEditBranch:
         # Arrange
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_edit"
-        user_col_count = len(temp_db._user_table.columns)
+        user_col_count = 5
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -220,7 +220,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * len(temp_db._user_table.columns)
+        assert result[2] == [no_update] * 5
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update
@@ -237,7 +237,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * len(temp_db._user_table.columns)
+        assert result[2] == [no_update] * 5
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update
@@ -254,7 +254,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * len(temp_db._user_table.columns)
+        assert result[2] == [no_update] * 5
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update
@@ -271,7 +271,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * len(temp_db._user_table.columns)
+        assert result[2] == [no_update] * 5
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update

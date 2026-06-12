@@ -161,7 +161,7 @@ def update_stock_modal():
                     [
                         dbc.Col(
                             html.P(
-                                "Updating stock will apply possible waste to all users."
+                                "Updating stock recalculates waste using the selected allocation strategy."
                             )
                         ),
                         dbc.Col(dbc.Button("Confirm", id="confirm_new_stock")),
@@ -203,6 +203,10 @@ def export_payments_modal():
             dbc.ModalHeader("Export Payments"),
             dbc.ModalBody(
                 [
+                    html.P(
+                        "Exporting recalculates and saves waste using the selected allocation strategy."
+                    ),
+                    html.Hr(),
                     dbc.Col(
                         [
                             dbc.Row(

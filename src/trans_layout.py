@@ -19,8 +19,9 @@ from src.database.data_connection import (
     add_transactions,
     reset_current_trans,
     get_show_bill,
-    get_waste,
+    get_waste_cents,
 )
+from src.analytics.trans_calculations import get_preview_user_waste_cents
 
 
 def trans_modal():
@@ -254,13 +255,18 @@ def show_balance(trigger, user_id):
             lambda x: price_dict[str(x)] if str(x) in list(price_dict.keys()) else 0
         )
 
-        user_waste = 0 if len(users) == 0 else get_waste() / len(users)
         user_id = get_barcode(user_id)
         try:
-            user = str(users[users["barcode"] == str(user_id)]["name"].values[0])
+            user_row = users[users["barcode"] == str(user_id)].iloc[0]
+            user = str(user_row["name"])
         except:
             return no_update
         user_balance = sum(
             map(float, trans[trans["barcode_user"] == str(user_id)]["price"])
         )
+        user_waste = get_preview_user_waste_cents(
+            user_row,
+            get_waste_cents(),
+            len(users),
+        ) / 100
         return f"{user} - Current bill is approximately: {max(0, round(user_balance + user_waste))}"

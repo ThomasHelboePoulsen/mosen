@@ -9,6 +9,7 @@ import os
 from src.container import Container
 from src.analytics.TopUserChartData import TopUserChartData
 from src.analytics.product_calculations import get_waste_table
+from src.analytics.waste_allocation import get_strategy_options
 from src.analytics.trans_calculations import (
     get_revenue,
     get_income,
@@ -40,6 +41,7 @@ from src.database.data_connection import (
     get_password,
     get_show_bill,
     get_waste,
+    get_waste_strategy,
     get_backup_time,
     get_cache_validation_time,
     get_backup_interval_ms,
@@ -175,8 +177,11 @@ def product_settings_layout():
 
 def transaction_settings_layout():
     waste = get_waste()
-    num_users = len(get_users())
-    user_waste = 0 if num_users == 0 else int(waste / num_users)
+    users = get_users()
+    allocated_waste = (
+        users[users["waste_cents"].astype(int) >= 0]["waste_cents"].astype(int).sum()
+        / 100
+    )
     layout = dbc.Container(
         [
             html.Div(
@@ -191,9 +196,9 @@ def transaction_settings_layout():
                                     html.Hr(),
                                     html.P(f"Current Revenue: {get_revenue()}"),
                                     html.Hr(),
-                                    html.P(
-                                        f"Current Waste: {waste} ({user_waste} pr. user)"
-                                    ),
+                                    html.P(f"Raw Waste: {waste}"),
+                                    html.P(f"Allocated Waste: {allocated_waste}"),
+                                    html.P(f"Next Strategy: {get_waste_strategy()}"),
                                     html.Hr(),
                                     html.P(f"Current Return: {get_current_return()}"),
                                     html.Hr(),
@@ -269,6 +274,24 @@ def settings_settings_layout():
                                                 "index": "users",
                                                 "type": "show_upload_file",
                                             }
+                                        ),
+                                        width=4,
+                                    ),
+                                ]
+                            ),
+                            width=12,
+                        ),
+                        html.Hr(),
+                        dbc.Col(
+                            dbc.Row(
+                                [
+                                    dbc.Col(html.P("Waste allocation:"), width=4),
+                                    dbc.Col(
+                                        dcc.Dropdown(
+                                            get_strategy_options(),
+                                            value=get_waste_strategy(),
+                                            clearable=False,
+                                            id="waste_strategy",
                                         ),
                                         width=4,
                                     ),
@@ -810,9 +833,10 @@ def toggle_checkboxes(n_clicks, current_values):
     Input("confirm_user", "n_clicks"),
     Input("delete_data_btn", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
+    Input("confirm_payments", "n_clicks"),
 )
 def update_settings_layout(
-    trigger, prods_trigger, user_trigger, reset_trigger, stock_trigger
+    trigger, prods_trigger, user_trigger, reset_trigger, stock_trigger, payments_trigger
 ):
     #SHOULD TRIGGER ON SUCCESSFUL DB CHANGES, NOT BUTTON CLICKS
     time.sleep(1)

@@ -14,6 +14,7 @@ from src.database.data_connection import (
     get_waste,
 )
 from src.analytics.trans_calculations import get_income
+from src.analytics.waste_allocation import allocate_waste
 from src.barcode_generator import generate_pdf
 from src.error_handler import append_error, callback_with_error_queue
 from src.container import Container
@@ -25,6 +26,7 @@ import io
 import shutil
 import os
 import zipfile
+import builtins
 from datetime import datetime
 
 
@@ -51,17 +53,18 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     Input("display_bill_switch", "value"),
     Input({"index": ALL, "type": "database_upload"}, "contents"),
     Input({"index": ALL, "type": "database_upload"}, "id"),
+    Input("waste_strategy", "value"),
     State("settings_password", "value"),
 )
 @db_transaction_result
-def update_settings(pass_trigger, show_bill, db_tables, table_ids, password):
+def update_settings(pass_trigger, show_bill, db_tables, table_ids, waste_strategy, password):
     if (trigger := ctx.triggered_id) is None:
         return None, no_update, no_update, [no_update] * 3, no_update
     open_warning_password = False
     if password is None or len(password) == 0:
         open_warning_password = True
         password = "OLProgram"
-    update_values(password, show_bill)
+    update_values(password, show_bill, waste_strategy=waste_strategy)
     if trigger == "confirm_new_password":
         return None, no_update, no_update, [no_update] * 3, True
 
@@ -118,27 +121,27 @@ def download_tables(trigger):
     State("up_down_dd", "value"),
     State("round_dd", "value"),
 )
+@db_transaction_raises
 def control_payments_modal(open_trigger, close_trigger, added_value, up_down, round):
     trigger = ctx.triggered_id
     if trigger == "export_payments_btn":
         return True, no_update
     elif trigger == "confirm_payments":
-        waste = get_waste()
-        user_prices = pd.DataFrame(get_income())
-        zero_users = user_prices[user_prices["price"] <= 0].copy()
-        income = user_prices[user_prices["price"] > 0].copy()
-        income["price"] += float(waste) / len(income)
-        income["price"] += float(added_value) / len(income)
+        db = Container.get(Database)
+        allocate_waste(db)
+        income = pd.DataFrame(get_income())
+        active = income["#products"] > 0
+        if active.any():
+            income.loc[active, "price"] += float(added_value) / int(active.sum())
         if int(round) != 0:
             if up_down == "Nearest":
-                rounding = lambda x: int(round * round(float(x) / round))
+                rounding = lambda x: int(round * builtins.round(float(x) / round))
             elif up_down == "Up":
                 rounding = lambda x: float(x) + round - (float(x) % round)
             else:
                 rounding = lambda x: float(x) - (float(x) % round)
-            income["price"] = income["price"].apply(rounding)
-
-        income = pd.concat([income, zero_users])
+            positive = income["price"] > 0
+            income.loc[positive, "price"] = income.loc[positive, "price"].apply(rounding)
         return False, dcc.send_data_frame(
             income.to_csv, filename="swamp_machine_payments.csv", index=False
         )
@@ -240,7 +243,7 @@ def edit_new_data_modals(delete, edit, table, barcode):
     db = Container.get(Database)
     user_table = db._user_table
     prod_table = db._product_table
-    user_col_count = len(user_table.columns)
+    user_col_count = 5
     prod_col_count = len(prod_table.columns)
 
     trigger = ctx.triggered_id

@@ -64,14 +64,18 @@ def add_row(n_clicks, vals, edit_barcode):
         return no_update, no_update
     if n_clicks > 0:
         data = table.get()
+        existing_waste = None
         
         if db.barcode_exists(edit_barcode, BarcodePartition.USER):
             barcode_mask = data["barcode"]== int(edit_barcode)
             if barcode_mask.any():
+                existing_waste = int(data[barcode_mask].iloc[0]["waste_cents"])
                 data = data[~barcode_mask].copy()
 
-        new_row = {col.name: val for col, val in zip(table.columns, vals)}        
+        visible_columns = ["barcode", "name", "rank", "team", "is_guest"]
+        new_row = {name: val for name, val in zip(visible_columns, vals)}
         new_row["is_guest"] = 1 if new_row.get("is_guest") else 0
+        new_row["waste_cents"] = existing_waste if existing_waste is not None else -1
 
         data = pd.concat([data, pd.DataFrame([new_row])])
         success, bad_rows = db.try_upload_values(data, "users") 

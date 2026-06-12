@@ -309,18 +309,38 @@ def get_show_bill():
     return db.settings.iloc[0]["show_bill"] == "True"
 
 def get_waste():
+    cents = get_waste_cents()
+    return cents // 100 if cents % 100 == 0 else cents / 100
+
+def get_waste_cents():
     db = Container.get(Database)
     db._settings_table.ensure_defaults()
-    return int(db.settings.iloc[0]["waste"])
+    return int(db.settings.iloc[0]["waste_cents"])
 
-def update_values(password=None, show_bill=None, waste=None, backup_time=None, cache_validation_time=None):
+def get_waste_strategy():
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return str(db.settings.iloc[0]["waste_strategy"])
+
+def update_values(
+    password=None,
+    show_bill=None,
+    waste=None,
+    waste_cents=None,
+    waste_strategy=None,
+    backup_time=None,
+    cache_validation_time=None,
+):
     db = Container.get(Database)
     db._settings_table.ensure_defaults()
     settings_row = db.settings.iloc[0].to_dict()
     inps = {
         "password": password,
         "show_bill": show_bill,
-        "waste": waste,
+        "waste_cents": waste_cents if waste_cents is not None else (
+            int(round(float(waste) * 100)) if waste is not None else None
+        ),
+        "waste_strategy": waste_strategy,
         "backup": backup_time,
         "cache_validation": cache_validation_time,
     }

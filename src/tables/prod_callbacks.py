@@ -4,10 +4,9 @@ from src.barcode import BarcodePartition, is_barcode
 from src.database.data_connection import (
     get_prods,
     get_trans,
-    update_values,
     db_transaction_raises,
 )
-from src.analytics.product_calculations import calculate_waste
+from src.analytics.waste_allocation import allocate_waste
 from src.container import Container
 from src.database.data_connection import Database
 from src.error_handler import callback_with_error_queue, Result
@@ -142,5 +141,4 @@ def confirm_new_stock(inps):
         raise ValueError("You cannot set a negative stock value or leave it empty.")
     prods["current_stock"] = [int(val) for val in list(inps)]
     db.upload_values_raises(prods, "prods")
-    waste = calculate_waste()
-    update_values(waste=waste)
+    allocate_waste(db)

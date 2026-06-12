@@ -7,7 +7,8 @@ class SettingsTable(BaseTable):
     columns = [
         Column("password", str, required=True),
         Column("show_bill", str, required=True),
-        Column("waste", int, required=True),
+        Column("waste_cents", int, required=True),
+        Column("waste_strategy", str, required=True),
         Column("backup", int, required=True),
         Column("cache_validation", int, required=True),
     ]
@@ -16,7 +17,8 @@ class SettingsTable(BaseTable):
         CREATE TABLE settings (
             password varchar(255),
             show_bill varchar(255),
-            waste INTEGER,
+            waste_cents INTEGER,
+            waste_strategy varchar(255),
             backup INTEGER,
             cache_validation INTEGER
         )
@@ -25,7 +27,8 @@ class SettingsTable(BaseTable):
     default_row = {
         "password": "OLProgram",
         "show_bill": "True",
-        "waste": 0,
+        "waste_cents": 0,
+        "waste_strategy": "equal_active",
         "backup": 10,
         "cache_validation": 5,
     }

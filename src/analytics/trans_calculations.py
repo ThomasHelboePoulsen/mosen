@@ -1,4 +1,17 @@
-from src.database.data_connection import get_trans, get_users, get_prods
+from src.database.data_connection import (
+    get_trans,
+    get_users,
+    get_prods,
+)
+
+
+def get_preview_user_waste_cents(user_row, total_waste_cents, user_count):
+    stored = int(user_row.get("waste_cents", -1))
+    if stored >= 0:
+        return stored
+    if user_count == 0:
+        return 0
+    return total_waste_cents / user_count
 
 
 def get_revenue():
@@ -49,6 +62,9 @@ def get_income():
         n_prods = lambda x: 0
     for _, user_row in users.iterrows():
         barcode = str(user_row["barcode"])
+        purchases = price(barcode)
+        stored_waste_cents = int(user_row.get("waste_cents", -1))
+        waste = None if stored_waste_cents < 0 else stored_waste_cents / 100
         user_income.append(
             {
                 "barcode": barcode,
@@ -56,7 +72,9 @@ def get_income():
                 "rank": str(user_row["rank"]),
                 "team": str(user_row["team"]),
                 "#products": n_prods(barcode),
-                "price": price(barcode),
+                "purchases": purchases,
+                "waste": waste,
+                "price": purchases if waste is None else purchases + waste,
             }
         )
     return user_income
