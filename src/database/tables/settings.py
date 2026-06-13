@@ -28,7 +28,7 @@ class SettingsTable(BaseTable):
         "password": "OLProgram",
         "show_bill": "True",
         "waste_cents": 0,
-        "waste_strategy": "equal_active",
+        "waste_strategy": "equal_category_purchasers",
         "backup": 10,
         "cache_validation": 5,
     }

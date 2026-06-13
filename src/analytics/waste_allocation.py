@@ -1,7 +1,11 @@
 import math
 from abc import ABC, abstractmethod
+from fractions import Fraction
 
-from src.analytics.product_calculations import calculate_waste_cents
+from src.analytics.product_calculations import (
+    calculate_category_waste_cents,
+    calculate_waste_cents,
+)
 
 
 class WasteAllocationStrategy(ABC):
@@ -48,7 +52,73 @@ class EqualActiveStrategy(WasteAllocationStrategy):
         return allocations
 
 
+class EqualCategoryPurchasersStrategy(WasteAllocationStrategy):
+    label = "Equal category purchasers"
+
+    @staticmethod
+    def _round_up_to_whole_krone(amount: Fraction) -> int:
+        if amount <= 0:
+            return 0
+        whole_kroner = (
+            amount.numerator + amount.denominator * 100 - 1
+        ) // (amount.denominator * 100)
+        return whole_kroner * 100
+
+    def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
+        users = db._user_table.get()
+        current_barcodes = set(users["barcode"].astype(str))
+        allocations = {
+            barcode: Fraction(0) for barcode in current_barcodes
+        }
+        if total_waste_cents <= 0 or not current_barcodes:
+            return {barcode: 0 for barcode in current_barcodes}
+
+        products = db._product_table.get()
+        transactions = db._transaction_table.get()
+        category_waste = calculate_category_waste_cents(products, transactions)
+        positive_waste = {
+            category: waste
+            for category, waste in category_waste.items()
+            if waste > 0
+        }
+        total_positive_waste = sum(positive_waste.values())
+
+        active_barcodes = (
+            current_barcodes & set(transactions["barcode_user"].astype(str))
+            if len(transactions)
+            else set()
+        )
+        product_categories = {
+            str(product["barcode"]): str(product["category"])
+            for _, product in products.iterrows()
+        }
+        category_purchasers = {}
+        for _, transaction in transactions.iterrows():
+            category = product_categories.get(str(transaction["barcode_prod"]))
+            barcode = str(transaction["barcode_user"])
+            if category is not None and barcode in current_barcodes:
+                category_purchasers.setdefault(category, set()).add(barcode)
+
+        for category, waste_cents in positive_waste.items():
+            category_budget = Fraction(
+                total_waste_cents * waste_cents,
+                total_positive_waste,
+            )
+            eligible = category_purchasers.get(category, set())
+            if not eligible:
+                eligible = active_barcodes or current_barcodes
+            share = category_budget / len(eligible)
+            for barcode in eligible:
+                allocations[barcode] += share
+
+        return {
+            barcode: self._round_up_to_whole_krone(amount)
+            for barcode, amount in allocations.items()
+        }
+
+
 STRATEGIES = {
+    "equal_category_purchasers": EqualCategoryPurchasersStrategy(),
     "equal_active": EqualActiveStrategy(),
     "equal_all": EqualAllStrategy(),
 }

@@ -79,6 +79,7 @@ def test_equal_active_includes_guests_and_rounds_up(test_db):
     )
     add_product()
     add_sales([1000, 1001])
+    update_values(waste_strategy="equal_active")
 
     allocate_waste(test_db)
 
@@ -97,6 +98,7 @@ def test_equal_active_falls_back_to_equal_all(test_db):
         ]
     )
     add_product()
+    update_values(waste_strategy="equal_active")
 
     allocate_waste(test_db)
 
@@ -106,6 +108,7 @@ def test_equal_active_falls_back_to_equal_all(test_db):
 
 def test_settlement_with_no_users_still_stores_raw_waste(test_db):
     add_product()
+    update_values(waste_strategy="equal_active")
 
     allocate_waste(test_db)
 
@@ -119,6 +122,7 @@ def test_negative_calculated_waste_is_clamped_to_zero(test_db):
     )
     add_product(current_stock=10)
     add_sales([1000])
+    update_values(waste_strategy="equal_active")
 
     allocate_waste(test_db)
 
@@ -218,9 +222,239 @@ def test_admin_income_does_not_use_preview_fallback(test_db):
 
 def test_strategy_options_are_generated_from_registry():
     assert get_strategy_options() == [
+        {
+            "label": "Equal category purchasers",
+            "value": "equal_category_purchasers",
+        },
         {"label": "Equal active users", "value": "equal_active"},
         {"label": "Equal all users", "value": "equal_all"},
     ]
+
+
+def test_category_strategy_is_default_for_new_databases(test_db):
+    assert (
+        test_db.settings.iloc[0]["waste_strategy"]
+        == "equal_category_purchasers"
+    )
+
+
+def test_existing_strategy_selection_is_preserved(test_db):
+    update_values(waste_strategy="equal_all")
+
+    test_db._settings_table.ensure_defaults()
+
+    assert test_db.settings.iloc[0]["waste_strategy"] == "equal_all"
+
+
+def test_category_strategy_aggregates_before_rounding(test_db):
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 3,
+                },
+                {
+                    "barcode": 124,
+                    "name": "Chips",
+                    "price": 1,
+                    "category": "Snacks",
+                    "current_stock": 0,
+                    "initial_stock": 3,
+                },
+            ]
+        ),
+        "prods",
+    )
+    add_transactions(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": user,
+                    "barcode_prod": product,
+                    "timestamp": f"2026-01-01 10:00:0{index}",
+                }
+                for index, (user, product) in enumerate(
+                    [(1000, 123), (1001, 123), (1000, 124), (1001, 124)]
+                )
+            ]
+        )
+    )
+
+    allocate_waste(test_db)
+
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 200
+    assert users.loc[1000, "waste_cents"] == 100
+    assert users.loc[1001, "waste_cents"] == 100
+
+
+def test_category_strategy_ignores_purchase_quantity(test_db):
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 6,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000, 1000, 1001])
+
+    allocate_waste(test_db)
+
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 300
+    assert users.loc[1000, "waste_cents"] == 200
+    assert users.loc[1001, "waste_cents"] == 200
+
+
+def test_category_without_purchases_falls_back_to_active_users(test_db):
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 2,
+                    "initial_stock": 3,
+                },
+                {
+                    "barcode": 124,
+                    "name": "Chips",
+                    "price": 1,
+                    "category": "Snacks",
+                    "current_stock": 2,
+                    "initial_stock": 3,
+                },
+            ]
+        ),
+        "prods",
+    )
+    add_transactions(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": 1000,
+                    "barcode_prod": 124,
+                    "timestamp": "2026-01-01 10:00:00",
+                }
+            ]
+        )
+    )
+
+    allocate_waste(test_db)
+
+    users = test_db._user_table.get().set_index("barcode")
+    assert users.loc[1000, "waste_cents"] == 100
+    assert users.loc[1001, "waste_cents"] == 0
+
+
+def test_category_without_active_users_falls_back_to_all_users(test_db):
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    add_product(current_stock=9)
+
+    allocate_waste(test_db)
+
+    assert test_db._user_table.get()["waste_cents"].tolist() == [200, 200]
+
+
+def test_category_strategy_distributes_globally_netted_waste(test_db):
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 3,
+                    "initial_stock": 10,
+                },
+                {
+                    "barcode": 124,
+                    "name": "Chips",
+                    "price": 1,
+                    "category": "Snacks",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                },
+                {
+                    "barcode": 125,
+                    "name": "Water",
+                    "price": 1,
+                    "category": "Water",
+                    "current_stock": 12,
+                    "initial_stock": 10,
+                },
+            ]
+        ),
+        "prods",
+    )
+    add_transactions(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": 1000,
+                    "barcode_prod": 123,
+                    "timestamp": "2026-01-01 10:00:00",
+                },
+                {
+                    "barcode_user": 1001,
+                    "barcode_prod": 124,
+                    "timestamp": "2026-01-01 10:00:01",
+                },
+            ]
+        )
+    )
+
+    allocate_waste(test_db)
+
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 800
+    assert users.loc[1000, "waste_cents"] == 500
+    assert users.loc[1001, "waste_cents"] == 400
 
 
 def test_product_waste_table_remains_live(test_db):

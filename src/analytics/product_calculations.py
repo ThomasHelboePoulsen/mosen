@@ -24,9 +24,20 @@ def _waste_rows(prods, transactions):
                 "Waste": amount,
                 "Total Price": amount * price_cents / 100,
                 "_total_cents": amount * price_cents,
+                "_category": str(product["category"]),
             }
         )
     return rows
+
+
+def calculate_category_waste_cents(prods, transactions) -> dict[str, int]:
+    category_waste = {}
+    for row in _waste_rows(prods, transactions):
+        category = row["_category"]
+        category_waste[category] = (
+            category_waste.get(category, 0) + row["_total_cents"]
+        )
+    return category_waste
 
 
 def calculate_waste_cents(prods=None, transactions=None):
@@ -44,4 +55,5 @@ def get_waste_table():
     rows = _waste_rows(get_prods(), get_trans())
     for row in rows:
         row.pop("_total_cents")
+        row.pop("_category")
     return rows
