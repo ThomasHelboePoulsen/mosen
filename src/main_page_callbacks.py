@@ -124,9 +124,9 @@ def download_tables(trigger):
 @db_transaction_raises
 def control_payments_modal(open_trigger, close_trigger, added_value, up_down, round):
     trigger = ctx.triggered_id
-    if trigger == "export_payments_btn":
+    if trigger == "export_payments_btn" and open_trigger:
         return True, no_update
-    elif trigger == "confirm_payments":
+    elif trigger == "confirm_payments" and close_trigger:
         db = Container.get(Database)
         allocate_waste(db)
         income = pd.DataFrame(get_income())
