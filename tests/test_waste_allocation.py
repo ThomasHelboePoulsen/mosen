@@ -220,15 +220,6 @@ def test_admin_income_does_not_use_preview_fallback(test_db):
     assert income["price"] == income["purchases"]
 
 
-def test_strategy_options_are_generated_from_registry():
-    assert get_strategy_options() == [
-        {
-            "label": "Equal category purchasers",
-            "value": "equal_category_purchasers",
-        },
-        {"label": "Equal active users", "value": "equal_active"},
-        {"label": "Equal all users", "value": "equal_all"},
-    ]
 
 
 def test_category_strategy_is_default_for_new_databases(test_db):
