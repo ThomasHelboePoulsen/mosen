@@ -7,6 +7,12 @@ from src.database.data_connection import Database
 from src.error_handler import callback_with_error_queue, Result
 
 
+def _kroner_to_cents(value, default=0):
+    if value is None or str(value).strip() == "":
+        return default
+    return int(round(float(value) * 100))
+
+
 @callback(
     Output("new_user_modal", "is_open", allow_duplicate=True),
     Output({"type": "user_input", "index": "inp_barcode_user"}, "value"),
@@ -65,17 +71,24 @@ def add_row(n_clicks, vals, edit_barcode):
     if n_clicks > 0:
         data = table.get()
         existing_waste = None
+        existing_paid = None
         
         if db.barcode_exists(edit_barcode, BarcodePartition.USER):
             barcode_mask = data["barcode"]== int(edit_barcode)
             if barcode_mask.any():
-                existing_waste = int(data[barcode_mask].iloc[0]["waste_cents"])
+                existing = data[barcode_mask].iloc[0]
+                existing_waste = int(existing["waste_cents"])
+                existing_paid = int(existing.get("paid_cents", 0))
                 data = data[~barcode_mask].copy()
 
         visible_columns = ["barcode", "name", "rank", "team", "is_guest"]
-        new_row = {name: val for name, val in zip(visible_columns, vals)}
+        new_row = {name: val for name, val in zip(visible_columns, vals[:5])}
         new_row["is_guest"] = 1 if new_row.get("is_guest") else 0
         new_row["waste_cents"] = existing_waste if existing_waste is not None else -1
+        paid_default = existing_paid if existing_paid is not None else 0
+        new_row["paid_cents"] = (
+            _kroner_to_cents(vals[5], paid_default) if len(vals) > 5 else paid_default
+        )
 
         data = pd.concat([data, pd.DataFrame([new_row])])
         success, bad_rows = db.try_upload_values(data, "users") 
@@ -83,13 +96,13 @@ def add_row(n_clicks, vals, edit_barcode):
              raise ValueError(f"Failed to upload user data. Bad rows: {bad_rows}")
 
 
-    if is_barcode(edit_barcode, BarcodePartition.USER):
+    if is_barcode(edit_barcode, BarcodePartition.USER) and int(vals[0]) != int(edit_barcode):
         trans = db._transaction_table.get()
         trans_mask = trans["barcode_user"]== int(edit_barcode)
         trans.loc[trans_mask, "barcode_user"] = int(vals[0])
         success, bad_rows = db.try_upload_values(trans, "transactions")
         if not success:
-             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
+             raise ValueError(f"Failed to upload transaction data. Bad rows: {bad_rows}")
 
 
     return table.get().to_dict(orient="records"), None

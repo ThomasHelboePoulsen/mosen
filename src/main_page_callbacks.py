@@ -130,7 +130,7 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
         db = Container.get(Database)
         allocate_waste(db)
         income = pd.DataFrame(get_income())
-        active = income["#products"] > 0
+        active = (income["#products"] > 0) & (income["price"] > 0)
         if active.any():
             income.loc[active, "price"] += float(added_value) / int(active.sum())
         if int(round) != 0:
@@ -243,7 +243,7 @@ def edit_new_data_modals(delete, edit, table, barcode):
     db = Container.get(Database)
     user_table = db._user_table
     prod_table = db._product_table
-    user_col_count = 5
+    user_col_count = 6
     prod_col_count = len(prod_table.columns)
 
     trigger = ctx.triggered_id
@@ -282,12 +282,14 @@ def edit_new_data_modals(delete, edit, table, barcode):
                 return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
             row_dict = row.iloc[0].to_dict()
             is_guest = int(str(row_dict.get("is_guest", 0))) == 1
+            paid = int(row_dict.get("paid_cents", 0)) / 100
             row_list = [
                 row_dict["barcode"],
                 row_dict["name"],
                 row_dict["rank"],
                 row_dict["team"],
                 [1] if is_guest else [],
+                paid,
             ]
             return True, False, row_list, [no_update] * prod_col_count, no_update, no_update
         if table == "prods":

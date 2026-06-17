@@ -84,6 +84,32 @@ def test_new_trans_inp_success(monkeypatch, temp_db):
     assert called["reset"] is True
 
 
+def test_paid_user_cannot_open_transaction_modal(monkeypatch, temp_db):
+    # Arrange
+    temp_db.upload_values([
+        {
+            "barcode": "1234",
+            "name": "U",
+            "rank": "r",
+            "team": "t",
+            "is_guest": 0,
+            "paid_cents": 100,
+        }
+    ], "users")
+    monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "1234")
+    monkeypatch.setattr(trans_layout, "ctx", types.SimpleNamespace(triggered_id="new_trans_inp"))
+
+    # Act
+    res = trans_layout.open_trans_modal(1, None, "1234", None, [])
+
+    # Assert
+    assert res[0] is no_update
+    assert res[1] == ""
+    assert res[2] is no_update
+    assert isinstance(res[3], list)
+    assert "already paid" in res[3][0]["msg"]
+
+
 def test_prod_barcode_success(monkeypatch, temp_db):
     # Arrange
     monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "1234")

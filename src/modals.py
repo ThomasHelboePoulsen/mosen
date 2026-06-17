@@ -37,6 +37,16 @@ user_body.append(
     )
 )
 user_body.append(html.Hr())
+user_body.append(
+    dbc.Input(
+        placeholder="Paid",
+        id={"type": "user_input", "index": "inp_paid_user"},
+        type="number",
+        min=0,
+        value=0,
+    )
+)
+user_body.append(html.Hr())
 
 
 def new_user_modal():

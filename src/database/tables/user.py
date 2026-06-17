@@ -12,6 +12,7 @@ class UserTable(BaseTable):
         Column("team", str, required=True),
         Column("is_guest", int, required=False, default=0),
         Column("waste_cents", int, required=False, default=-1),
+        Column("paid_cents", int, required=False, default=0),
     ]
     
     create_sql = """
@@ -21,6 +22,7 @@ class UserTable(BaseTable):
             rank varchar(255),
             team varchar(255),
             is_guest INTEGER,
-            waste_cents INTEGER
+            waste_cents INTEGER,
+            paid_cents INTEGER
         )
     """

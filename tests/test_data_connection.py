@@ -72,6 +72,7 @@ class TestWrapperFunctions:
             "team",
             "is_guest",
             "waste_cents",
+            "paid_cents",
         ]
         
         # Act

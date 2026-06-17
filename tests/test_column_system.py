@@ -93,6 +93,7 @@ class TestOptionalColumnFilling:
         df = table.get()
         assert len(df) == 1
         assert df.iloc[0]["is_guest"] == 0
+        assert df.iloc[0]["paid_cents"] == 0
 
     def test_set_preserves_explicit_optional_value(self, test_db):
         table = UserTable(test_db._connection)
@@ -128,6 +129,11 @@ class TestColumnIntegration:
         is_guest = next(col for col in UserTable.columns if col.name == "is_guest")
         assert is_guest.required == False
         assert is_guest.default == 0
+
+    def test_user_table_has_optional_paid_cents(self):
+        paid_cents = next(col for col in UserTable.columns if col.name == "paid_cents")
+        assert paid_cents.required == False
+        assert paid_cents.default == 0
 
     def test_get_returns_correct_column_names(self, test_db):
         table = ProductTable(test_db._connection)

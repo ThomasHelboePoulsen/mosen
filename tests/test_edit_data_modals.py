@@ -50,7 +50,7 @@ class TestDeleteUserByBarcode:
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_delete"
-        user_col_count = 5
+        user_col_count = 6
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -74,7 +74,7 @@ class TestDeleteProductByBarcode:
         # Arrange
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_delete"
-        user_col_count = 5
+        user_col_count = 6
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -118,7 +118,7 @@ class TestEditBranch:
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_edit"
-        user_col_count = 5
+        user_col_count = 6
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -133,13 +133,14 @@ class TestEditBranch:
         # Assert
         assert result[0] is True  # new_user_modal opens
         assert result[1] is False  # new_prod_modal stays closed
-        # User form data: [barcode, name, rank, team, [1] if is_guest else []]
+        # User form data: [barcode, name, rank, team, [1] if is_guest else [], paid]
         # Note: callback returns untyped data (strings) from get_users()
         assert result[2][0] == 1500  # barcode (untyped from get_users)
         assert result[2][1] == "John Doe"  # name
         assert result[2][2] == "Admin"  # rank
         assert result[2][3] == "Team A"  # team
         assert result[2][4] == []  # is_guest checkbox (empty list = unchecked)
+        assert result[2][5] == 0  # paid amount
         assert result[3] == [no_update] * prod_col_count
         assert result[4] is no_update  # user_table data
         assert result[5] is no_update  # prod_table data
@@ -178,7 +179,7 @@ class TestEditBranch:
         # Arrange
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_edit"
-        user_col_count = 5
+        user_col_count = 6
         prod_col_count = len(temp_db._product_table.columns)
 
         # Act
@@ -220,7 +221,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * 5
+        assert result[2] == [no_update] * 6
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update
@@ -237,7 +238,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * 5
+        assert result[2] == [no_update] * 6
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update
@@ -254,7 +255,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * 5
+        assert result[2] == [no_update] * 6
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update
@@ -271,7 +272,7 @@ class TestEdgeCases:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
-        assert result[2] == [no_update] * 5
+        assert result[2] == [no_update] * 6
         assert result[3] == [no_update] * len(temp_db._product_table.columns)
         assert result[4] is no_update
         assert result[5] is no_update

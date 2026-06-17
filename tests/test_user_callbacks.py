@@ -101,6 +101,114 @@ class TestUserCallbacksAddRow:
         assert users.iloc[0]["barcode"] == "1600"
         assert users.iloc[0]["name"] == "New User"
 
+    def test_add_row_records_paid_amount_in_cents(self, test_db):
+        # Arrange
+        vals = [1234, "Alice", "User", "Team B", 0, 12.5]
+
+        # Act
+        add_row(1, vals, None)
+
+        # Assert
+        users = get_users()
+        assert users.iloc[0]["paid_cents"] == "1250"
+
+    def test_add_row_edit_preserves_paid_amount_when_field_missing(self, test_db):
+        # Arrange
+        upload_values(
+            pd.DataFrame([
+                {
+                    "barcode": 1500,
+                    "name": "Old User",
+                    "rank": "Admin",
+                    "team": "Team A",
+                    "is_guest": 0,
+                    "paid_cents": 2500,
+                }
+            ]),
+            "users",
+        )
+        vals = [1600, "New User", "User", "Team B", 0]
+
+        # Act
+        add_row(1, vals, 1500)
+
+        # Assert
+        users = get_users()
+        assert users.iloc[0]["paid_cents"] == "2500"
+
+    def test_add_row_edit_updates_paid_amount_in_cents(self, test_db):
+        # Arrange
+        upload_values(
+            pd.DataFrame([
+                {
+                    "barcode": 1500,
+                    "name": "Old User",
+                    "rank": "Admin",
+                    "team": "Team A",
+                    "is_guest": 0,
+                    "paid_cents": 2500,
+                }
+            ]),
+            "users",
+        )
+        vals = [1600, "New User", "User", "Team B", 0, 30]
+
+        # Act
+        add_row(1, vals, 1500)
+
+        # Assert
+        users = get_users()
+        assert users.iloc[0]["paid_cents"] == "3000"
+
+    def test_add_row_edit_can_set_paid_for_user_with_existing_transactions(self, test_db):
+        # Arrange
+        upload_values(
+            pd.DataFrame([
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 5.0,
+                    "category": "Beverage",
+                    "current_stock": 10,
+                    "initial_stock": 20,
+                }
+            ]),
+            "prods",
+        )
+        upload_values(
+            pd.DataFrame([
+                {
+                    "barcode": 1500,
+                    "name": "John",
+                    "rank": "Member",
+                    "team": "A",
+                    "is_guest": 0,
+                }
+            ]),
+            "users",
+        )
+        add_transactions(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode_user": "1500",
+                        "barcode_prod": "123",
+                        "timestamp": "2024-01-01 12:00:00",
+                    }
+                ]
+            )
+        )
+        vals = [1500, "John", "Member", "A", 0, 10]
+
+        # Act
+        add_row(1, vals, 1500)
+
+        # Assert
+        users = get_users()
+        trans = get_trans()
+        assert users.iloc[0]["paid_cents"] == "1000"
+        assert trans.iloc[0]["barcode_user"] == "1500"
+
     def test_add_row_no_cascade_on_new_user(self, test_db):
         # Arrange
         upload_values(

@@ -131,12 +131,16 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
     
     trigger = ctx.triggered_id
     if trigger == "new_trans_inp":
-        user_barcodes = list(db.get_table("users").get()["barcode"])    
+        users = db.get_table("users").get()
+        user_barcodes = list(users["barcode"])
         if len(user_barcodes) < 1:
             return Result(clear_barcode_open, ValueError("No users exist"))
         if barcode_open is None or not barcode_open.isdecimal():
             return Result(clear_barcode_open, ValueError("Empty barcode"))
         if int(barcode_open) in user_barcodes:
+            user = users[users["barcode"] == int(barcode_open)].iloc[0]
+            if int(user.get("paid_cents", 0)) > 0:
+                return Result(clear_barcode_open, ValueError("User has already paid"))
             reset_current_trans()
             return True, no_update, ""
         return clear_barcode_open #I couldn't provoke this branch when testing
@@ -151,6 +155,10 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
 def checkout_cart_to(user_barcode, db:Database):
     if not db.barcode_exists(user_barcode, BarcodePartition.USER):
         raise ValueError(f"User not found: {user_barcode}")
+    users = db._user_table.get()
+    user = users[users["barcode"] == int(user_barcode)]
+    if len(user) and int(user.iloc[0].get("paid_cents", 0)) > 0:
+        raise ValueError(f"User has already paid: {user_barcode}")
     current = db._temporary_table.get()
     new_rows = pd.DataFrame(
         [

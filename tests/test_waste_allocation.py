@@ -1,6 +1,7 @@
 import pandas as pd
 import pytest
 import types
+import io
 
 from src.analytics.product_calculations import get_waste_table
 from src.analytics.trans_calculations import (
@@ -218,6 +219,516 @@ def test_admin_income_does_not_use_preview_fallback(test_db):
 
     assert income["waste"] is None
     assert income["price"] == income["purchases"]
+
+
+def test_user_import_defaults_paid_cents_to_zero(test_db):
+    # Arrange
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+
+    # Act
+    user = test_db._user_table.get().iloc[0]
+
+    # Assert
+    assert user["paid_cents"] == 0
+
+
+def test_settled_user_transaction_import_is_allowed(test_db):
+    # Arrange
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 100,
+            }
+        ]
+    )
+    add_product()
+
+    # Act
+    result, bad_rows = add_transactions(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": 1000,
+                    "barcode_prod": 123,
+                    "timestamp": "2026-01-01 10:00:00",
+                }
+            ]
+        )
+    )
+
+    # Assert
+    assert result == "success"
+    assert bad_rows == []
+    assert len(test_db._transaction_table.get()) == 1
+
+
+def test_settled_prepaid_waste_is_subtracted_before_equal_split(test_db):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 300,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    update_values(waste_strategy="equal_all")
+
+    # Act
+    allocate_waste(test_db)
+
+    # Assert
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 400
+    assert users.loc[1000, "waste_cents"] == 200
+    assert users.loc[1001, "waste_cents"] == 200
+
+
+def test_equal_active_excludes_settled_active_purchasers(test_db):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 6,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000, 1001])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 200,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    update_values(waste_strategy="equal_active")
+
+    # Act
+    allocate_waste(test_db)
+
+    # Assert
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 400
+    assert users.loc[1000, "waste_cents"] == 100
+    assert users.loc[1001, "waste_cents"] == 300
+
+
+def test_category_strategy_excludes_settled_category_purchasers(test_db):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 6,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000, 1001])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 200,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+
+    # Act
+    allocate_waste(test_db)
+
+    # Assert
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 400
+    assert users.loc[1000, "waste_cents"] == 100
+    assert users.loc[1001, "waste_cents"] == 300
+
+
+def test_settled_prepaid_waste_is_recomputed_when_prices_change(test_db):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 300,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    update_values(waste_strategy="equal_all")
+
+    # Act
+    allocate_waste(test_db)
+    users = test_db._user_table.get().set_index("barcode")
+
+    # Assert
+    assert users.loc[1000, "waste_cents"] == 200
+    assert users.loc[1001, "waste_cents"] == 200
+
+    # Arrange
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 2,
+                    "category": "Beverage",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                }
+            ]
+        ),
+        "prods",
+    )
+
+    # Act
+    allocate_waste(test_db)
+
+    # Assert
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 800
+    assert users.loc[1000, "waste_cents"] == 100
+    assert users.loc[1001, "waste_cents"] == 700
+
+
+def test_settled_prepaid_waste_can_cover_all_waste(test_db):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 1000,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    update_values(waste_strategy="equal_all")
+
+    # Act
+    allocate_waste(test_db)
+
+    # Assert
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 400
+    assert users.loc[1000, "waste_cents"] == 900
+    assert users.loc[1001, "waste_cents"] == 0
+
+
+def test_settled_payment_below_purchases_has_no_prepaid_waste(test_db):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 6,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000, 1001])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 50,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    update_values(waste_strategy="equal_all")
+
+    # Act
+    allocate_waste(test_db)
+
+    # Assert
+    users = test_db._user_table.get().set_index("barcode")
+    assert get_waste_cents() == 400
+    assert users.loc[1000, "waste_cents"] == 0
+    assert users.loc[1001, "waste_cents"] == 400
+
+
+def test_settled_prepaid_waste_must_cover_total_waste_when_no_one_can_be_charged(test_db):
+    # Arrange
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 300,
+            }
+        ]
+    )
+    update_values(waste_strategy="equal_all")
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="did not cover"):
+        allocate_waste(test_db)
+
+
+def test_settled_user_has_zero_remaining_income(test_db):
+    # Arrange
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 5,
+                    "initial_stock": 10,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 500,
+            }
+        ]
+    )
+
+    # Act
+    allocate_waste(test_db)
+    income = get_income()[0]
+
+    # Assert
+    assert income["paid"] == 5
+    assert income["price"] == 0
+
+
+def test_payment_export_added_income_ignores_settled_users(test_db, monkeypatch):
+    # Arrange
+    add_users(
+        [
+            {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 1,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 5,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000, 1001])
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "paid_cents": 300,
+            },
+            {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
+        ]
+    )
+    update_values(waste_strategy="equal_all")
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "ctx",
+        types.SimpleNamespace(triggered_id="confirm_payments"),
+    )
+    monkeypatch.setattr(
+        main_page_callbacks.dcc,
+        "send_data_frame",
+        lambda to_csv, filename, index=False: to_csv(index=index),
+    )
+
+    # Act
+    result = main_page_callbacks.control_payments_modal(
+        None, 1, 10, "Up", 0, []
+    )
+
+    # Assert
+    income = pd.read_csv(io.StringIO(result[1])).set_index("barcode")
+    assert result[0] is False
+    assert income.loc[1000, "price"] == 0
+    assert income.loc[1001, "price"] == 12
 
 
 

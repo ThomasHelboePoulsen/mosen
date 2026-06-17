@@ -117,9 +117,23 @@ class BaseTable(ABC):
         for col in self.columns:
             if not col.required:
                 val = row.get(col.name)
-                if val is None or str(val).strip() == "":
+                if self._is_missing_optional_value(val):
                     row[col.name] = col.default
+                    val = row[col.name]
+                if col.dtype is int and isinstance(val, float) and val.is_integer():
+                    row[col.name] = int(val)
         return row
+
+    @staticmethod
+    def _is_missing_optional_value(val) -> bool:
+        if val is None:
+            return True
+        try:
+            if pd.isna(val):
+                return True
+        except (TypeError, ValueError):
+            pass
+        return str(val).strip() == ""
     
     def set(self, data: list | pd.DataFrame) -> tuple[str, list]:
         """Replace mode: fill optional defaults, validate, delete all, insert."""

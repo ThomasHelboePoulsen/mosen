@@ -65,6 +65,10 @@ def get_income():
         purchases = price(barcode)
         stored_waste_cents = int(user_row.get("waste_cents", -1))
         waste = None if stored_waste_cents < 0 else stored_waste_cents / 100
+        paid_cents = int(user_row.get("paid_cents", 0))
+        paid = paid_cents / 100
+        settled = paid_cents > 0
+        total = purchases if waste is None else purchases + waste
         user_income.append(
             {
                 "barcode": barcode,
@@ -74,7 +78,8 @@ def get_income():
                 "#products": n_prods(barcode),
                 "purchases": purchases,
                 "waste": waste,
-                "price": purchases if waste is None else purchases + waste,
+                "paid": paid,
+                "price": 0 if settled else total,
             }
         )
     return user_income

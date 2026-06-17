@@ -35,7 +35,10 @@ class TransactionTable(BaseTable):
         if not self._validate_product_exists(row):
             return False
         
-        return self._validate_user_exists(row)
+        if not self._validate_user_exists(row):
+            return False
+
+        return True
     
     def _validate_product_exists(self, row: dict) -> bool:
         """Check that barcode_prod exists in products table."""

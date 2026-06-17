@@ -23,12 +23,45 @@ class WasteAllocationStrategy(ABC):
         return {barcode: share_cents for barcode in barcodes}
 
 
+def _unsettled_barcodes(users) -> set[str]:
+    if len(users) == 0:
+        return set()
+    return set(
+        users[users["paid_cents"].astype(int) <= 0]["barcode"].astype(str)
+    )
+
+
+def _purchase_totals_cents(products, transactions) -> dict[str, int]:
+    prices = {
+        str(product["barcode"]): int(round(float(product["price"]) * 100))
+        for _, product in products.iterrows()
+    }
+    totals = {}
+    for _, transaction in transactions.iterrows():
+        user_barcode = str(transaction["barcode_user"])
+        product_barcode = str(transaction["barcode_prod"])
+        totals[user_barcode] = totals.get(user_barcode, 0) + prices.get(product_barcode, 0)
+    return totals
+
+
+def _settled_prepaid_waste_cents(users, products, transactions) -> dict[str, int]:
+    purchase_totals = _purchase_totals_cents(products, transactions)
+    prepaid_waste = {}
+    for _, user in users.iterrows():
+        paid_cents = int(user.get("paid_cents", 0))
+        if paid_cents <= 0:
+            continue
+        barcode = str(user["barcode"])
+        prepaid_waste[barcode] = max(0, paid_cents - purchase_totals.get(barcode, 0))
+    return prepaid_waste
+
+
 class EqualAllStrategy(WasteAllocationStrategy):
     label = "Equal all users"
 
     def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
         users = db._user_table.get()
-        barcodes = sorted(users["barcode"].astype(str).tolist())
+        barcodes = sorted(_unsettled_barcodes(users))
         return self.equal_split(total_waste_cents, barcodes)
 
 
@@ -37,7 +70,7 @@ class EqualActiveStrategy(WasteAllocationStrategy):
 
     def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
         users = db._user_table.get()
-        current_barcodes = set(users["barcode"].astype(str))
+        current_barcodes = _unsettled_barcodes(users)
         transactions = db._transaction_table.get()
         active_barcodes = (
             set(transactions["barcode_user"].astype(str))
@@ -66,7 +99,7 @@ class EqualCategoryPurchasersStrategy(WasteAllocationStrategy):
 
     def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
         users = db._user_table.get()
-        current_barcodes = set(users["barcode"].astype(str))
+        current_barcodes = _unsettled_barcodes(users)
         allocations = {
             barcode: Fraction(0) for barcode in current_barcodes
         }
@@ -136,15 +169,20 @@ def allocate_waste(db) -> dict[str, int]:
     if strategy_key not in STRATEGIES:
         raise ValueError(f"Unknown waste strategy: {strategy_key}")
 
-    total_waste_cents = calculate_waste_cents(
-        db._product_table.get(),
-        db._transaction_table.get(),
-    )
-    allocations = STRATEGIES[strategy_key].allocate(db, total_waste_cents)
-
+    products = db._product_table.get()
+    transactions = db._transaction_table.get()
+    total_waste_cents = calculate_waste_cents(products, transactions)
     users = db._user_table.get()
+    prepaid_waste = _settled_prepaid_waste_cents(users, products, transactions)
+    allocatable_waste_cents = max(0, total_waste_cents - sum(prepaid_waste.values()))
+    allocations = STRATEGIES[strategy_key].allocate(db, allocatable_waste_cents)
+
     users["waste_cents"] = (
         users["barcode"].astype(str).map(allocations).fillna(0).astype(int)
+    )
+    settled_mask = users["barcode"].astype(str).isin(prepaid_waste)
+    users.loc[settled_mask, "waste_cents"] = (
+        users.loc[settled_mask, "barcode"].astype(str).map(prepaid_waste).astype(int)
     )
     db.upload_values_raises(users, "users")
 
@@ -152,10 +190,15 @@ def allocate_waste(db) -> dict[str, int]:
     settings.loc[0, "waste_cents"] = total_waste_cents
     db.upload_values_raises(settings, "settings")
 
-    allocated = int(users["waste_cents"].sum()) if len(users) else 0
-    charged_users = int((users["waste_cents"] > 0).sum()) if len(users) else 0
-    if charged_users and allocated < total_waste_cents:
+    unsettled_mask = users["paid_cents"].astype(int) <= 0
+    covered_waste = int(users["waste_cents"].sum()) if len(users) else 0
+    unsettled_allocated = (
+        int(users.loc[unsettled_mask, "waste_cents"].sum()) if len(users) else 0
+    )
+    charged_users = int((users.loc[unsettled_mask, "waste_cents"] > 0).sum()) if len(users) else 0
+    rounding_overage_cents = unsettled_allocated - allocatable_waste_cents
+    if len(users) and covered_waste < total_waste_cents:
         raise ValueError("Waste allocation did not cover the calculated waste")
-    if charged_users and allocated - total_waste_cents >= charged_users * 100:
+    if charged_users and rounding_overage_cents >= charged_users * 100:
         raise ValueError("Waste allocation exceeded the allowed rounding overage")
     return allocations
