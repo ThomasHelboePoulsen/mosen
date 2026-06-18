@@ -843,6 +843,17 @@ def update_settings_layout(
     trigger, prods_trigger, user_trigger, reset_trigger, stock_trigger, payments_trigger
 ):
     #SHOULD TRIGGER ON SUCCESSFUL DB CHANGES, NOT BUTTON CLICKS
+    if all(
+        action is None
+        for action in [
+            prods_trigger,
+            user_trigger,
+            reset_trigger,
+            stock_trigger,
+            payments_trigger,
+        ]
+    ):
+        return no_update, no_update, no_update
     time.sleep(1)
     return (
         user_settings_layout(),
