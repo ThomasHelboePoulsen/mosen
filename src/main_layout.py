@@ -773,14 +773,17 @@ def open_settings(trigger, trigger_enter, password, error_queue):
 @callback(
     Output("top_user_chart_modal", "is_open"),
     Output('products_selector', 'options'),
+    Output('products_selector', 'value', allow_duplicate=True),
     Input("open_top_user_chart", "n_clicks"),
+    prevent_initial_call=True,
 )
 def open_report(trigger):
     if trigger:
         data = Container.get(TopUserChartData)
         data.refresh()
-        return True, data.all_products
-    return no_update, no_update
+        options = [{'label': product, 'value': product} for product in data.all_products]
+        return True, options, data.all_products
+    return no_update, no_update, no_update
 
 @callback(
     Output("top_user_chart", "figure"),
@@ -817,6 +820,7 @@ def toggle_visibility(value, current_style):
 def toggle_checkboxes(n_clicks, current_values):
     if not n_clicks:
         return no_update
+    current_values = current_values or []
     product_names = Container.get(TopUserChartData).all_products
 
     if set(product_names).issubset(current_values):

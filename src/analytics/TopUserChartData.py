@@ -1,5 +1,6 @@
 from src.container import Container
 from src.database.data_connection import Database, get_prods
+import pandas as pd
 import plotly.express as px
 
 class TopUserChartData:
@@ -23,6 +24,7 @@ class TopUserChartData:
 
     def get_chart(self, selected_products:list)-> px.bar:
         """returns a barchart with the top buyers of selected_products based last refresh"""
+        selected_products = selected_products or []
         selected_user_products = self.all_user_products[self.all_user_products['product'].isin(selected_products)]
         user_totals = (
             selected_user_products
@@ -41,6 +43,8 @@ class TopUserChartData:
     def get_verbose_user_products(self):
         """get user products with all possible combinations listed (ie. all rows with amount = 0 are included)"""
         all_user_products = self.__class__.query_user_products()
+        if all_user_products.empty:
+            return pd.DataFrame(columns=self.__db_cols).astype(self.__db_dtypes)
         all_user_products = (
             all_user_products
             .pivot_table(index="user", columns="product", values="amount", fill_value=0)
