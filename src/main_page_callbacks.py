@@ -240,7 +240,16 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
-@db_transaction_raises
+@db_transaction_result(
+    fallback_values=(
+        no_update,
+        no_update,
+        [no_update] * 6,
+        [no_update] * 6,
+        no_update,
+        no_update,
+    )
+)
 def edit_new_data_modals(delete, edit, table, barcode):
     db = Container.get(Database)
     user_table = db._user_table
@@ -250,12 +259,21 @@ def edit_new_data_modals(delete, edit, table, barcode):
 
     trigger = ctx.triggered_id
     if trigger == "edit_modal_delete" and barcode is not None:
+        transactions = db._transaction_table.get()
         if table == "users":
             data = user_table.get()
             other_table_data = no_update
+            in_use = transactions["barcode_user"].astype(str).eq(str(barcode)).any()
+            delete_type = "user"
         elif table == "prods":
             data = prod_table.get()
             other_table_data = no_update
+            in_use = transactions["barcode_prod"].astype(str).eq(str(barcode)).any()
+            delete_type = "product"
+        if in_use:
+            raise ValueError(
+                f"Cannot delete {delete_type} {barcode} because it has transactions."
+            )
         barcode_mask = data["barcode"] == int(barcode)
         data = data[~barcode_mask].copy()
         db.upload_values_raises(data, table)

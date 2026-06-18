@@ -3,7 +3,7 @@ import pandas as pd
 from unittest.mock import patch
 from dash import no_update
 from src.container import Container
-from src.database.data_connection import Database, upload_values
+from src.database.data_connection import Database, add_transactions, upload_values
 from src.main_page_callbacks import edit_new_data_modals
 
 
@@ -107,6 +107,83 @@ class TestDeleteWithInvalidBarcode:
         assert len(remaining_users) == 1
         assert remaining_users.iloc[0]["barcode"] == 1500
         assert len(result[4]) == 1
+
+
+class TestDeleteWithTransactions:
+
+    @patch("src.main_page_callbacks.ctx")
+    def test_cannot_delete_user_with_transactions(
+        self, mock_ctx, temp_db, test_user_data, test_product_data
+    ):
+        # Arrange
+        upload_values(test_user_data, "users")
+        upload_values(test_product_data, "prods")
+        add_transactions(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode_user": 1500,
+                        "barcode_prod": 101,
+                        "timestamp": "2026-01-01 10:00:00",
+                    }
+                ]
+            )
+        )
+        mock_ctx.triggered_id = "edit_modal_delete"
+
+        # Act
+        result = edit_new_data_modals(1, None, "users", 1500, [])
+
+        # Assert
+        users = temp_db._user_table.get()
+        assert len(users) == 1
+        assert users.iloc[0]["barcode"] == 1500
+        assert result[:6] == (
+            no_update,
+            no_update,
+            [no_update] * 6,
+            [no_update] * len(temp_db._product_table.columns),
+            no_update,
+            no_update,
+        )
+        assert "Cannot delete user 1500" in result[6][0]["msg"]
+
+    @patch("src.main_page_callbacks.ctx")
+    def test_cannot_delete_product_with_transactions(
+        self, mock_ctx, temp_db, test_user_data, test_product_data
+    ):
+        # Arrange
+        upload_values(test_user_data, "users")
+        upload_values(test_product_data, "prods")
+        add_transactions(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode_user": 1500,
+                        "barcode_prod": 101,
+                        "timestamp": "2026-01-01 10:00:00",
+                    }
+                ]
+            )
+        )
+        mock_ctx.triggered_id = "edit_modal_delete"
+
+        # Act
+        result = edit_new_data_modals(1, None, "prods", 101, [])
+
+        # Assert
+        prods = temp_db._product_table.get()
+        assert len(prods) == 1
+        assert prods.iloc[0]["barcode"] == 101
+        assert result[:6] == (
+            no_update,
+            no_update,
+            [no_update] * 6,
+            [no_update] * len(temp_db._product_table.columns),
+            no_update,
+            no_update,
+        )
+        assert "Cannot delete product 101" in result[6][0]["msg"]
 
 
 class TestEditBranch:
