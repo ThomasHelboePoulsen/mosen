@@ -38,12 +38,17 @@ user_body.append(
 )
 user_body.append(html.Hr())
 user_body.append(
-    dbc.Input(
-        placeholder="Paid",
-        id={"type": "user_input", "index": "inp_paid_user"},
-        type="number",
-        min=0,
-        value=0,
+    dbc.InputGroup(
+        [
+            dbc.InputGroupText("Early payment (DKK)"),
+            dbc.Input(
+                placeholder="0.00",
+                id={"type": "user_input", "index": "inp_paid_user"},
+                type="number",
+                min=0,
+                value=0,
+            ),
+        ]
     )
 )
 user_body.append(html.Hr())

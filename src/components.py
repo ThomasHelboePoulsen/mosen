@@ -1,6 +1,19 @@
 from dash import dcc, html, dash_table
 
 
+def _display_column_name(column):
+    return column.replace("_", " ").title()
+
+
+def _get_columns(data):
+    if not data:
+        return None
+    return [
+        {"name": _display_column_name(column), "id": column}
+        for column in data[0].keys()
+    ]
+
+
 def get_upload(id: str):
     return dcc.Upload(
         ["Drag and drop or ", html.A("Select a File")],
@@ -13,6 +26,7 @@ def get_table(id, data, height):
     return dash_table.DataTable(
         id=id,
         data=data,
+        columns=_get_columns(data),
         row_deletable=False,
         fixed_rows={"headers": True},
         style_table={
@@ -24,13 +38,23 @@ def get_table(id, data, height):
             "textOverflow": "ellipsis",
             "maxWidth": 0,
             "textAlign": "left",
+            "padding": "2px 4px",
+        },
+        style_header={
+            "whiteSpace": "normal",
+            "height": "auto",
+            "overflow": "visible",
+            "textOverflow": "clip",
+            "fontWeight": "bold",
+            "lineHeight": "1.1",
+            "padding": "2px 4px",
         },
         tooltip_data=(
             None
             if data is None
             else [
                 {
-                    column.replace("_", " ").title(): {
+                    column: {
                         "value": str(value),
                         "type": "markdown",
                     }
