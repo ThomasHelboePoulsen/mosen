@@ -1,7 +1,8 @@
+import base64
+import io
 import pandas as pd
 import pytest
 import types
-import io
 
 from src.analytics.product_calculations import get_waste_table
 from src.analytics.trans_calculations import (
@@ -33,6 +34,11 @@ def test_db(tmp_path):
 
 def add_users(users):
     upload_values(pd.DataFrame(users), "users")
+
+
+def read_downloaded_excel(download):
+    data = base64.b64decode(download["content"])
+    return pd.read_excel(io.BytesIO(data))
 
 
 def add_product(current_stock=7):
@@ -713,11 +719,6 @@ def test_payment_export_added_income_ignores_settled_users(test_db, monkeypatch)
         "ctx",
         types.SimpleNamespace(triggered_id="confirm_payments"),
     )
-    monkeypatch.setattr(
-        main_page_callbacks.dcc,
-        "send_data_frame",
-        lambda to_csv, filename, index=False: to_csv(index=index),
-    )
 
     # Act
     result = main_page_callbacks.control_payments_modal(
@@ -725,10 +726,52 @@ def test_payment_export_added_income_ignores_settled_users(test_db, monkeypatch)
     )
 
     # Assert
-    income = pd.read_csv(io.StringIO(result[1])).set_index("barcode")
+    income = read_downloaded_excel(result[1]).set_index("barcode")
     assert result[0] is False
     assert income.loc[1000, "price"] == 0
     assert income.loc[1001, "price"] == 12
+
+
+def test_payment_export_uses_excel_file(test_db, monkeypatch):
+    # Arrange
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    upload_values(
+        pd.DataFrame(
+            [
+                {
+                    "barcode": 123,
+                    "name": "Beer",
+                    "price": 20,
+                    "category": "Beverage",
+                    "current_stock": 0,
+                    "initial_stock": 1,
+                }
+            ]
+        ),
+        "prods",
+    )
+    add_sales([1000])
+    update_values(waste_strategy="equal_all")
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "ctx",
+        types.SimpleNamespace(triggered_id="confirm_payments"),
+    )
+
+    # Act
+    result = main_page_callbacks.control_payments_modal(
+        None, 1, 0, "Up", 0, []
+    )
+
+    # Assert
+    download = result[1]
+    assert download["filename"] == "swamp_machine_payments.xlsx"
+    assert download["base64"] is True
+    income = read_downloaded_excel(download).set_index("barcode")
+    assert income.loc[1000, "purchases"] == 20
+    assert income.loc[1000, "price"] == 20
 
 
 

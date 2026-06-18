@@ -143,7 +143,9 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
             positive = income["price"] > 0
             income.loc[positive, "price"] = income.loc[positive, "price"].apply(rounding)
         return False, dcc.send_data_frame(
-            income.to_csv, filename="swamp_machine_payments.csv", index=False
+            income.to_excel,
+            filename="swamp_machine_payments.xlsx",
+            index=False,
         )
     else:
         return no_update, no_update
