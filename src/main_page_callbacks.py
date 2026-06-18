@@ -20,6 +20,7 @@ from src.error_handler import append_error, callback_with_error_queue
 from src.container import Container
 from src.database.data_connection import Database
 from src.analytics.overview_plot import create_overview
+from src.analytics.bar_chart_format import format_count_bar_chart
 
 import base64
 import io
@@ -405,4 +406,4 @@ def study_users(users):
         prod_dict.update(counts)
         study_table.append(prod_dict)
 
-    return px.bar(study_table, text="user")
+    return format_count_bar_chart(px.bar(study_table, text="user"))

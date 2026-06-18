@@ -22,6 +22,7 @@ from src.database.data_connection import (
     get_waste_cents,
 )
 from src.analytics.trans_calculations import get_preview_user_waste_cents
+from src.analytics.bar_chart_format import format_count_bar_chart
 
 
 def trans_modal():
@@ -106,7 +107,7 @@ def get_transactions(trigger, barcode):
         raise ValueError("User not found")
     user_trans = transactions[transactions["barcode_user"] == str(barcode)]
     trans_data = [user_trans["name"].value_counts().to_dict()]
-    return px.bar(trans_data)
+    return format_count_bar_chart(px.bar(trans_data), show_x_tick_labels=False)
 
 
 @callback_with_error_queue(3,

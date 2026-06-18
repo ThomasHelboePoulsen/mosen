@@ -1,5 +1,6 @@
 from src.container import Container
 from src.database.data_connection import Database, get_prods
+from src.analytics.bar_chart_format import format_count_bar_chart
 import pandas as pd
 import plotly.express as px
 
@@ -38,7 +39,8 @@ class TopUserChartData:
             .to_list()
         )
         selected_user_products = selected_user_products[selected_user_products['user'].isin(top_x_users)]
-        return px.bar(selected_user_products,x="user",y="amount",color="product")
+        fig = px.bar(selected_user_products, x="user", y="amount", color="product")
+        return format_count_bar_chart(fig)
 
     def get_verbose_user_products(self):
         """get user products with all possible combinations listed (ie. all rows with amount = 0 are included)"""

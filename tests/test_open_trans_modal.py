@@ -84,6 +84,38 @@ def test_new_trans_inp_success(monkeypatch, temp_db):
     assert called["reset"] is True
 
 
+def test_transaction_graph_hides_index_axis_labels(monkeypatch, temp_db):
+    # Arrange
+    temp_db.upload_values([
+        {"barcode": "1234", "name": "U", "rank": "r", "team": "t", "is_guest": 0}
+    ], "users")
+    temp_db.upload_values([
+        {"barcode": "101", "name": "P", "price": 1.0, "category": "c", "current_stock": 10, "initial_stock": 10}
+    ], "prods")
+    temp_db._transaction_table.append(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": "1234",
+                    "barcode_prod": "101",
+                    "timestamp": "2026-01-01 10:00:00",
+                }
+            ]
+        )
+    )
+    monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "1234")
+
+    # Act
+    fig, error = trans_layout.get_transactions(1, "1234", [])
+
+    # Assert
+    assert error is no_update
+    assert fig.layout.xaxis.title.text is None
+    assert fig.layout.xaxis.showticklabels is False
+    assert fig.layout.yaxis.title.text == "amount"
+    assert fig.layout.yaxis.dtick == 1
+
+
 def test_paid_user_cannot_open_transaction_modal(monkeypatch, temp_db):
     # Arrange
     temp_db.upload_values([

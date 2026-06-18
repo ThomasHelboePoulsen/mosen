@@ -1,6 +1,7 @@
 
 from pandas import DataFrame
 from plotly import express as px
+from src.analytics.bar_chart_format import format_count_bar_chart
 from src.database.data_connection import (
     get_prods,
     get_trans,
@@ -23,9 +24,9 @@ def create_overview(plot_col, average=False):
     transactions = get_trans()
     users = get_users()
     transactions, users = filter_guest_users(transactions, users)
-    
+
     if len(transactions) == 0:
-        return px.bar()
+        return format_count_bar_chart(px.bar())
 
     def translation(x, t_dict):
         try:
@@ -108,4 +109,5 @@ def create_overview(plot_col, average=False):
         prods[prods["barcode"] == str(p)]["name"].values[0]
         for p in transactions["barcode_prod"]
     ]
-    return px.bar(overview_df, x=ranks, y=y)
+    fig = px.bar(overview_df, x=ranks, y=y)
+    return format_count_bar_chart(fig)
