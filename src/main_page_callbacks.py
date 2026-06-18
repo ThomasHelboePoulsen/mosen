@@ -31,6 +31,20 @@ import builtins
 from datetime import datetime
 
 
+BACKUP_DIR = "swamp_backups"
+
+
+def create_database_backup(data_file="beerbase.db", label="backup", backup_dir=None):
+    backup_dir = backup_dir or BACKUP_DIR
+    os.makedirs(backup_dir, exist_ok=True)
+
+    db_name = os.path.splitext(os.path.basename(data_file))[0]
+    timestamp = datetime.now().strftime("%d_%m_%Y_%H_%M_%S_%f")
+    filename = os.path.join(backup_dir, f"{db_name}_{label}_{timestamp}.db")
+    shutil.copy(data_file, filename)
+    return filename
+
+
 @callback(
     Output("overview_graph", "figure"),
     Input("new_trans_modal", "is_open"),
@@ -65,22 +79,34 @@ def update_settings(pass_trigger, show_bill, db_tables, table_ids, waste_strateg
     if password is None or len(password) == 0:
         open_warning_password = True
         password = "OLProgram"
+
+    db = Container.get(Database)
+    imports = []
+    import_triggered = isinstance(trigger, dict) and trigger.get("type") == "database_upload"
+    if import_triggered:
+        for i, table in enumerate(db_tables):
+            if table is None:
+                continue
+            _, content_string = table.split(",")
+            content = base64.b64decode(content_string)
+            df = pd.read_csv(io.StringIO(content.decode("utf-8")))
+            if len(df) > 0:
+                imports.append((i, df, table_ids[i]["index"]))
+
+    if imports:
+        create_database_backup(db.data_file, label="pre_import")
+
     update_values(password, show_bill, waste_strategy=waste_strategy)
     if trigger == "confirm_new_password":
         return None, no_update, no_update, [no_update] * 3, True
 
     bad_rows_list = [[], [], []]
-    open_warning_data = False          
-    db = Container.get(Database)
-    for i, table in enumerate(db_tables):
-        if table is None:
-            continue
-        _, content_string = table.split(",")
-        content = base64.b64decode(content_string)
-        df = pd.read_csv(io.StringIO(content.decode("utf-8")))
-        if len(df) > 0:
-            open_warning_data, bad_rows = db.try_upload_values(df, table_ids[i]["index"])
-            bad_rows_list[i] = bad_rows
+    open_warning_data = False
+    for i, df, table_name in imports:
+        success, bad_rows = db.try_upload_values(df, table_name)
+        bad_rows_list[i] = bad_rows
+        if not success:
+            open_warning_data = True
     return TransactionResult((True, open_warning_password, open_warning_data, bad_rows_list, False), commit=not open_warning_data)
 
 
@@ -350,11 +376,8 @@ def reset_database(trigger, delete, cancel):
 )
 def backup_database(trigger, interval):
     if trigger is not None and interval != 0:
-        if not os.path.isdir("swamp_backups"):
-            os.mkdir("swamp_backups")
-        filename = f"swamp_backups/beerbase_backup_{str(datetime.now().strftime('%d_%m_%Y_%H_%M_%S'))}.db"
-        shutil.copy("beerbase.db", filename)
-        return filename
+        db = Container.get(Database)
+        return create_database_backup(db.data_file, label="backup")
     return no_update
 
 
