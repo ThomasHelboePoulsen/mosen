@@ -22,28 +22,30 @@ run_in_web = False
 
 # Run the app
 if __name__ == "__main__":
+    h = None
+    try:
+        # Disable ways of closing the app
+        print("Running....")
+        k.block_key("alt")
+        k.block_key("windows")
+        h = windll.user32.FindWindowA(b"Shell_TrayWnd", None)
+        windll.user32.ShowWindow(h, 0)
 
-    # Disable ways of closing the app
-    print("Running....")
-    k.block_key("alt")
-    k.block_key("windows")
-    h = windll.user32.FindWindowA(b"Shell_TrayWnd", None)
-    windll.user32.ShowWindow(h, 0)
-
-    if run_in_web:
-        run_my_server()
-    else:
-        threading.Thread(target=run_my_server, daemon=True).start()
-        webview.create_window(
-            "Mosemaskinen",
-            "http://127.0.0.1:8050",
-            fullscreen=True,
-            frameless=True,
-            easy_drag=False,
-            on_top=True,
-        )
-        webview.start()
-
-    # Renable all keys and taskbars
-    k.unhook_all()
-    windll.user32.ShowWindow(h, 9)
+        if run_in_web:
+            run_my_server()
+        else:
+            threading.Thread(target=run_my_server, daemon=True).start()
+            webview.create_window(
+                "Mosemaskinen",
+                "http://127.0.0.1:8050",
+                fullscreen=True,
+                frameless=True,
+                easy_drag=False,
+                on_top=True,
+            )
+            webview.start()
+    finally:
+        # Re-enable all keys and taskbars even if startup or webview fails.
+        k.unhook_all()
+        if h is not None:
+            windll.user32.ShowWindow(h, 9)

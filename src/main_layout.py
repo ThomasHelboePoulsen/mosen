@@ -842,7 +842,8 @@ def toggle_checkboxes(n_clicks, current_values):
 def update_settings_layout(
     trigger, prods_trigger, user_trigger, reset_trigger, stock_trigger, payments_trigger
 ):
-    #SHOULD TRIGGER ON SUCCESSFUL DB CHANGES, NOT BUTTON CLICKS
+    #Currently works by guessing that any db changes are done 1 sec after a callback possibly changing anything
+    #Ideally this is moved to only trigger after a callback sucessfully changes db.
     if all(
         action is None
         for action in [

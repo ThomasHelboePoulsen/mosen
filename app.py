@@ -23,7 +23,6 @@ dash.clientside_callback(
     """
     function(trig, newT, settings, password) {
         if (newT && !settings && !password) {
-            console.log("Prod focus");
             document.getElementById("prod_barcode").focus();
         }
         return;
@@ -41,7 +40,6 @@ dash.clientside_callback(
     """
     function(trig, newT, settings, password) {
         if (!newT && !settings && !password) {
-            console.log("Main focus");
             document.getElementById("new_trans_inp").focus();
             return;
         }

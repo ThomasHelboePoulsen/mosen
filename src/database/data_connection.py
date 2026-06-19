@@ -356,7 +356,7 @@ def update_values(
 def reset_all_tables():
     con, cur = Container.get(Database).init()
     for table in ["users", "prods", "transactions", "temporary", "settings"]:
-        cur.execute(f"DROP TABLE {table}")
+        cur.execute(f"DROP TABLE {table} IF EXISTS")
         con.commit()
     Container.set(Database, Database())
     k.unhook_all()
