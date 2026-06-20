@@ -365,7 +365,7 @@ def settings_settings_layout():
                         dbc.Col(
                             dbc.Row(
                                 [
-                                    dbc.Col(html.P("Bill waste extra (%): "), width=4),
+                                    dbc.Col(html.P("Bill preview extra waste (%): "), width=4),
                                     dbc.Col(
                                         dbc.Input(
                                             value=get_bill_preview_waste_extra_percent(),

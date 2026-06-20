@@ -1,113 +1,135 @@
-
-from pandas import DataFrame
 from plotly import express as px
 from src.analytics.bar_chart_format import format_count_bar_chart
 from src.database.data_connection import (
     get_prods,
     get_trans,
     get_users,
-    upload_values,
-    update_values,
-    reset_all_tables,
-    get_waste,
 )
+
 
 def filter_guest_users(transactions, users):
     users = users[users["is_guest"].astype(int) != 1]
-    
+
     valid_barcodes = set(users["barcode"].astype(str))
-    transactions = transactions[transactions["barcode_user"].astype(str).isin(valid_barcodes)]
+    transactions = transactions[
+        transactions["barcode_user"].astype(str).isin(valid_barcodes)
+    ]
     return transactions, users
+
+
+def create_overview_data(prods, transactions, users, plot_col, average=False):
+    transactions, users = filter_guest_users(transactions, users)
+
+    if len(transactions) == 0:
+        return {"overview_df": [], "ranks": [], "y": []}
+
+    transactions = transactions.copy()
+    users = users.copy()
+    prods = prods.copy()
+    transactions["barcode_user"] = transactions["barcode_user"].astype(str)
+    transactions["barcode_prod"] = transactions["barcode_prod"].astype(str)
+    users["barcode"] = users["barcode"].astype(str)
+    prods["barcode"] = prods["barcode"].astype(str)
+
+    if plot_col == "products":
+        text = lambda x: f"{x} category"
+        ranks = [text(cat) for cat in list(prods["category"].unique())]
+        product_lookup = prods[["barcode", "name", "category"]].rename(
+            columns={
+                "barcode": "barcode_prod",
+                "name": "prod_names",
+                "category": "rank_value",
+            }
+        )
+        transactions = transactions.merge(
+            product_lookup,
+            on="barcode_prod",
+            how="left",
+        )
+        transactions["rank"] = transactions["rank_value"].apply(text)
+
+    else:
+        text = lambda x: f"{x} {plot_col.lower()}"
+        ranks = [text(rank) for rank in list(users[str(plot_col)].unique())]
+        user_lookup = users[["barcode", str(plot_col)]].rename(
+            columns={"barcode": "barcode_user", str(plot_col): "rank_value"}
+        )
+        product_lookup = prods[["barcode", "name"]].rename(
+            columns={"barcode": "barcode_prod", "name": "prod_names"}
+        )
+        transactions = transactions.merge(
+            user_lookup,
+            on="barcode_user",
+            how="left",
+        ).merge(
+            product_lookup,
+            on="barcode_prod",
+            how="left",
+        )
+        transactions["rank"] = transactions["rank_value"].apply(text)
+
+    if transactions["prod_names"].isna().any():
+        raise IndexError("Transaction references an unknown product barcode")
+
+    counts = (
+        transactions.groupby(["rank", "prod_names"], sort=False)
+        .size()
+        .rename("count")
+        .reset_index()
+    )
+
+    if average:
+        if plot_col == "products":
+            category_stock = (
+                prods.assign(
+                    initial_stock=prods["initial_stock"].astype(int),
+                    rank=prods["category"].apply(text),
+                )
+                .groupby("rank", sort=False)["initial_stock"]
+                .sum()
+                .to_dict()
+            )
+            denominators = counts["rank"].map(category_stock)
+            counts["count"] = counts["count"].astype(int).div(denominators).where(
+                denominators != 0,
+                0,
+            )
+        else:
+            user_counts = users[str(plot_col)].apply(text).value_counts().to_dict()
+            denominators = counts["rank"].map(user_counts)
+            counts["count"] = counts["count"].astype(int).div(denominators).where(
+                denominators != 0,
+                0,
+            )
+
+    grouped_counts = {
+        rank: dict(zip(group["prod_names"], group["count"]))
+        for rank, group in counts.groupby("rank", sort=False)
+    }
+    overview_df = [grouped_counts.get(rank, {}) for rank in ranks]
+    y = list(counts["prod_names"].drop_duplicates())
+    return {"overview_df": overview_df, "ranks": ranks, "y": y}
+
+
+def create_overview_figure(overview_data):
+    if (
+        overview_data["overview_df"] == []
+        and overview_data["ranks"] == []
+        and overview_data["y"] == []
+    ):
+        return format_count_bar_chart(px.bar())
+    fig = px.bar(
+        overview_data["overview_df"],
+        x=overview_data["ranks"],
+        y=overview_data["y"],
+    )
+    return format_count_bar_chart(fig)
+
 
 def create_overview(plot_col, average=False):
     prods = get_prods()
     transactions = get_trans()
     users = get_users()
-    transactions, users = filter_guest_users(transactions, users)
-
-    if len(transactions) == 0:
-        return format_count_bar_chart(px.bar())
-
-    def translation(x, t_dict):
-        try:
-            ret = t_dict[str(x)]
-        except:
-            ret = "UNKNOWN"
-        return ret
-
-    if plot_col == "products":
-        text = lambda x: f"{x} category"
-        ranks = [text(cat) for cat in list(prods["category"].unique())]
-        rank_dict = {
-            str(row["barcode"]): text(row["category"]) for i, row in prods.iterrows()
-        }
-        transactions["rank"] = transactions["barcode_prod"].apply(
-            translation, t_dict=rank_dict
-        )
-
-    else:
-        text = lambda x: f"{x} {plot_col.lower()}"
-        ranks = [text(rank) for rank in list(users[str(plot_col)].unique())]
-        rank_dict = {
-            str(row["barcode"]): text(row[str(plot_col)]) for i, row in users.iterrows()
-        }
-
-        transactions["rank"] = transactions["barcode_user"].apply(
-            translation, t_dict=rank_dict
-        )
-
-    prod_dict = {str(row["barcode"]): row["name"] for i, row in prods.iterrows()}
-    transactions["prod_names"] = transactions["barcode_prod"].apply(
-        translation, t_dict=prod_dict
+    return create_overview_figure(
+        create_overview_data(prods, transactions, users, plot_col, average)
     )
-    overview_df = [
-        transactions[transactions["rank"] == rank].value_counts("prod_names").to_dict()
-        for rank in ranks
-    ]
-
-    if average:
-        if plot_col == "products":
-            overview_df = [
-                {
-                    rank: (
-                        0
-                        if (
-                            number := int(
-                                prods[prods["category"] == ranks[i][:-9]][
-                                    "initial_stock"
-                                ].values[0]
-                            )
-                        )
-                        == 0
-                        else int(count) / number
-                    )
-                    for rank, count in overview.items()
-                }
-                for i, overview in enumerate(overview_df)
-            ]
-        else:
-            overview_df = [
-                {
-                    rank: (
-                        0
-                        if (
-                            number := len(
-                                users[
-                                    users[str(plot_col)]
-                                    == ranks[i][: -(len(plot_col) + 1)]
-                                ]
-                            )
-                        )
-                        == 0
-                        else int(count) / number
-                    )
-                    for rank, count in overview.items()
-                }
-                for i, overview in enumerate(overview_df)
-            ]
-    y = [
-        prods[prods["barcode"] == str(p)]["name"].values[0]
-        for p in transactions["barcode_prod"]
-    ]
-    fig = px.bar(overview_df, x=ranks, y=y)
-    return format_count_bar_chart(fig)
