@@ -321,12 +321,17 @@ def edit_modal():
                 ]
             ),
             dbc.ModalFooter(
-                dbc.Row(
+                html.Div(
                     [
-                        # dbc.Col(width=6),
-                        dbc.Col(dbc.Button("Delete", id="edit_modal_delete")),
-                        dbc.Col(dbc.Button("Edit", id="edit_modal_edit")),
-                    ]
+                        dbc.Button("Edit", id="edit_modal_edit"),
+                        dbc.Button(
+                            "Delete",
+                            id="edit_modal_delete",
+                            color="danger",
+                            outline=True,
+                        ),
+                    ],
+                    className="d-flex justify-content-between w-100",
                 )
             ),
         ],

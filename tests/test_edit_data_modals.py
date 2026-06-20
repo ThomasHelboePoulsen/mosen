@@ -4,7 +4,7 @@ from unittest.mock import patch
 from dash import no_update
 from src.container import Container
 from src.database.data_connection import Database, add_transactions, upload_values
-from src.main_page_callbacks import edit_new_data_modals
+from src.main_page_callbacks import edit_new_data_modals, open_edit_modal
 
 PRODUCT_FORM_FIELD_COUNT = 5
 
@@ -56,7 +56,7 @@ class TestDeleteUserByBarcode:
         prod_col_count = PRODUCT_FORM_FIELD_COUNT
 
         # Act
-        result = edit_new_data_modals(1, None, "users", 1500, [])
+        result = edit_new_data_modals(1, None, None, "users", 1500, [])
 
         # Assert
         remaining_users = temp_db._user_table.get()
@@ -80,7 +80,7 @@ class TestDeleteProductByBarcode:
         prod_col_count = PRODUCT_FORM_FIELD_COUNT
 
         # Act
-        result = edit_new_data_modals(1, None, "prods", 101, [])
+        result = edit_new_data_modals(1, None, None, "prods", 101, [])
 
         # Assert
         remaining_prods = temp_db._product_table.get()
@@ -102,7 +102,7 @@ class TestDeleteWithInvalidBarcode:
         mock_ctx.triggered_id = "edit_modal_delete"
 
         # Act
-        result = edit_new_data_modals(1, None, "users", 9999, [])
+        result = edit_new_data_modals(1, None, None, "users", 9999, [])
 
         # Assert
         remaining_users = temp_db._user_table.get()
@@ -134,7 +134,7 @@ class TestDeleteWithTransactions:
         mock_ctx.triggered_id = "edit_modal_delete"
 
         # Act
-        result = edit_new_data_modals(1, None, "users", 1500, [])
+        result = edit_new_data_modals(1, None, None, "users", 1500, [])
 
         # Assert
         users = temp_db._user_table.get()
@@ -171,7 +171,7 @@ class TestDeleteWithTransactions:
         mock_ctx.triggered_id = "edit_modal_delete"
 
         # Act
-        result = edit_new_data_modals(1, None, "prods", 101, [])
+        result = edit_new_data_modals(1, None, None, "prods", 101, [])
 
         # Assert
         prods = temp_db._product_table.get()
@@ -204,6 +204,7 @@ class TestEditBranch:
         result = edit_new_data_modals(
             None,  # delete n_clicks
             1,  # edit n_clicks
+            None,  # edit input submit
             "users",  # table
             1500,  # barcode
             [],  # error_queue (added by decorator)
@@ -225,6 +226,26 @@ class TestEditBranch:
         assert result[5] is no_update  # prod_table data
 
     @patch("src.main_page_callbacks.ctx")
+    def test_enter_key_populates_user_form(self, mock_ctx, temp_db, test_user_data):
+        """Submitting the barcode input should behave like clicking Edit."""
+        upload_values(test_user_data, "users")
+        mock_ctx.triggered_id = "edit_input"
+
+        result = edit_new_data_modals(
+            None,  # delete n_clicks
+            None,  # edit n_clicks
+            1,  # edit input submit
+            "users",  # table
+            1500,  # barcode
+            [],  # error_queue (added by decorator)
+        )
+
+        assert result[0] is True
+        assert result[1] is False
+        assert result[2][0] == 1500
+        assert result[2][1] == "John Doe"
+
+    @patch("src.main_page_callbacks.ctx")
     def test_edit_user_with_guest_flag(self, mock_ctx, temp_db):
         """Edit user with is_guest=1 should show checkbox as checked"""
         # Arrange
@@ -244,6 +265,7 @@ class TestEditBranch:
         result = edit_new_data_modals(
             None,  # delete n_clicks
             1,  # edit n_clicks
+            None,  # edit input submit
             "users",  # table
             2000,  # barcode
             [],  # error_queue (added by decorator)
@@ -265,6 +287,7 @@ class TestEditBranch:
         result = edit_new_data_modals(
             None,  # delete n_clicks
             1,  # edit n_clicks
+            None,  # edit input submit
             "prods",  # table
             101,  # barcode
             [],  # error_queue (added by decorator)
@@ -288,13 +311,21 @@ class TestEditBranch:
 class TestEdgeCases:
 
     @patch("src.main_page_callbacks.ctx")
+    def test_enter_key_closes_edit_chooser(self, mock_ctx):
+        mock_ctx.triggered_id = "edit_input"
+
+        result = open_edit_modal(None, None, None, None, 1)
+
+        assert result == (False, None, no_update)
+
+    @patch("src.main_page_callbacks.ctx")
     def test_edit_nonexistent_user_returns_all_no_update(self, mock_ctx, temp_db, test_user_data):
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_edit"
 
         # Act
-        result = edit_new_data_modals(None, 1, "users", 9999, [])
+        result = edit_new_data_modals(None, 1, None, "users", 9999, [])
 
         # Assert
         assert result[0] is no_update
@@ -311,7 +342,7 @@ class TestEdgeCases:
         mock_ctx.triggered_id = None
 
         # Act
-        result = edit_new_data_modals(None, None, "users", 1500, [])
+        result = edit_new_data_modals(None, None, None, "users", 1500, [])
 
         # Assert
         assert result[0] is no_update
@@ -328,7 +359,7 @@ class TestEdgeCases:
         mock_ctx.triggered_id = "edit_modal_delete"
 
         # Act
-        result = edit_new_data_modals(1, None, "users", None, [])
+        result = edit_new_data_modals(1, None, None, "users", None, [])
 
         # Assert
         assert result[0] is no_update
@@ -345,7 +376,7 @@ class TestEdgeCases:
         mock_ctx.triggered_id = "edit_modal_edit"
 
         # Act
-        result = edit_new_data_modals(None, 1, "users", None, [])
+        result = edit_new_data_modals(None, 1, None, "users", None, [])
 
         # Assert
         assert result[0] is no_update
@@ -378,7 +409,7 @@ class TestUploadFailureHandling:
         db.upload_values_raises = mock_upload_values_raises
 
         # Act
-        result = edit_new_data_modals(1, None, "users", 1500, [])
+        result = edit_new_data_modals(1, None, None, "users", 1500, [])
 
         # Assert
         assert call_tracker["called"]

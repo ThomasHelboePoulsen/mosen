@@ -301,15 +301,18 @@ def open_bad_rows(trigger, data):
     Input("edit_prods", "n_clicks"),
     Input("edit_modal_delete", "n_clicks"),
     Input("edit_modal_edit", "n_clicks"),
+    Input("edit_input", "n_submit"),
     prevent_initial_call=True,
 )
-def open_edit_modal(open_user, open_prod, close_delete, close_edit):
+def open_edit_modal(open_user, open_prod, close_delete, close_edit, submit_edit):
     trigger = ctx.triggered_id
     if trigger in ["edit_users", "edit_prods"] and any(
         [trig is not None for trig in [open_user, open_prod]]
     ):
         text = "user" if "user" in trigger else "product"
         return True, trigger.split("_")[1], f"Input barcode for {text}"
+    if trigger == "edit_input" and submit_edit:
+        return False, None, no_update
     if trigger in ["edit_modal_delete", "edit_modal_edit"] and any(
         [trig is not None for trig in [close_delete, close_edit]]
     ):
@@ -326,6 +329,7 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
     Output("prod_table", "data", allow_duplicate=True),
     Input("edit_modal_delete", "n_clicks"),
     Input("edit_modal_edit", "n_clicks"),
+    Input("edit_input", "n_submit"),
     State("edit_modal_row", "data"),
     State("edit_input", "value"),
     prevent_initial_call=True,
@@ -340,7 +344,7 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
         no_update,
     )
 )
-def edit_new_data_modals(delete, edit, table, barcode):
+def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
     db = Container.get(Database)
     user_table = db._user_table
     prod_table = db._product_table
@@ -384,7 +388,7 @@ def edit_new_data_modals(delete, edit, table, barcode):
             other_table_data,
             data.to_dict(orient="records"),
         )
-    elif trigger == "edit_modal_edit" and barcode is not None:
+    elif trigger in ["edit_modal_edit", "edit_input"] and barcode is not None:
         if table == "users":
             data = user_table.get()
             row = data[data["barcode"] == int(barcode)]
