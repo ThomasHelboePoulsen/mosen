@@ -46,6 +46,7 @@ from src.database.data_connection import (
     get_cache_validation_time,
     get_backup_interval_ms,
     get_cache_validation_interval_ms,
+    get_bill_preview_waste_extra_percent,
 )
 from src import cache_validation  # register cache validation callback
 
@@ -355,6 +356,24 @@ def settings_settings_layout():
                                             value=get_show_bill(),
                                             className="d-grid gap-2 col-10 mx-auto",
                                         )
+                                    ),
+                                ]
+                            ),
+                            width=12,
+                        ),
+                        html.Hr(),
+                        dbc.Col(
+                            dbc.Row(
+                                [
+                                    dbc.Col(html.P("Bill waste extra (%): "), width=4),
+                                    dbc.Col(
+                                        dbc.Input(
+                                            value=get_bill_preview_waste_extra_percent(),
+                                            id="bill_preview_waste_extra_percent",
+                                            type="number",
+                                            min=0,
+                                        ),
+                                        width=4,
                                     ),
                                 ]
                             ),
@@ -833,6 +852,7 @@ def toggle_checkboxes(n_clicks, current_values):
     Output("product_settings", "children"),
     Output("economy_settings", "children"),
     Input("setting_tabs", "value"),
+    Input("settings_modal", "is_open"),
     Input("confirm_prod", "n_clicks"),
     Input("confirm_user", "n_clicks"),
     Input("delete_data_btn", "n_clicks"),
@@ -840,7 +860,13 @@ def toggle_checkboxes(n_clicks, current_values):
     Input("confirm_payments", "n_clicks"),
 )
 def update_settings_layout(
-    trigger, prods_trigger, user_trigger, reset_trigger, stock_trigger, payments_trigger
+    trigger,
+    settings_open,
+    prods_trigger,
+    user_trigger,
+    reset_trigger,
+    stock_trigger,
+    payments_trigger,
 ):
     #Currently works by guessing that any db changes are done 1 sec after a callback possibly changing anything
     #Ideally this is moved to only trigger after a callback sucessfully changes db.
@@ -852,6 +878,7 @@ def update_settings_layout(
             reset_trigger,
             stock_trigger,
             payments_trigger,
+            settings_open,
         ]
     ):
         return no_update, no_update, no_update

@@ -9,18 +9,18 @@ description: Maintain and extend this repository's Swamp Machine/Mosemaskinen Da
 
 Use this guide for changes to the Swamp Machine trip app. The app is a Danish-style "stregsystem": a self-checkout/accounting system for trip purchases, combined with admin dashboards and graphs. It runs on poor Windows laptops, often offline, with the UI normally locked down so ordinary users cannot exit the app. Favor reliability, local-first behavior, simple dependencies, and fast recovery over architectural cleverness.
 
-Before non-trivial code changes, read `.agents/references/mosen-repo-guide.md`.
+Before non-trivial code changes, read `.agents/references/mosen-repo-guide.md`. Treat both this file and that reference as active repo instructions, not optional background.
 
 ## Working Rules
 
-- Treat the current trip database as disposable between versions unless the user explicitly asks for compatibility. Migrations are not usually needed because old data is not reused across released versions.
+- Treat the current trip database as disposable between versions unless the user explicitly asks for compatibility. Migrations and schema-compatibility shims are not usually needed because old data is not reused across released versions.
 - Do not add runtime internet requirements. Avoid CDN assets, remote APIs, telemetry, or features that need network access during trips.
 - Keep dependencies pinned in `requirements.txt`; add dependencies only when they improve reliability enough to justify offline installation and packaging cost.
 - Preserve keyboard/barcode workflow speed. The main flow should remain scan-focused and low-friction.
 - Keep full data import robust. Admins may import users, products, and transactions at any time, not only during initial setup.
 - Prefer typed data when adding new features or changing data logic.
 - Prefer small, direct fixes that match existing Dash callback and table patterns.
-- Validate with the local venv: `.\.venv\Scripts\python.exe -m pytest ...`.
+- Validate with the local venv: `.\.venv\Scripts\python.exe -m pytest ...`. If this fails due to sandbox/process-launch restrictions, rerun the same command with escalated permissions rather than switching to another Python.
 
 ## Common Workflow
 

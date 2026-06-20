@@ -14,6 +14,7 @@ from src.container import Container
 from src.database.data_connection import (
     Database,
     add_transactions,
+    get_last_stock_update_at,
     get_waste_cents,
     update_values,
     upload_values,
@@ -198,7 +199,7 @@ def test_new_user_uses_preview_fallback_and_edit_preserves_waste(test_db):
     users = test_db._user_table.get()
     new_user = users[users["barcode"] == 1001].iloc[0]
     assert new_user["waste_cents"] == -1
-    assert get_preview_user_waste_cents(new_user, 600, len(users)) == 300
+    assert get_preview_user_waste_cents(new_user, 600, len(users)) == 450
 
     add_row(1, [2000, "A", "R", "T", 0], 1000)
     edited = test_db._user_table.get()
@@ -713,7 +714,10 @@ def test_payment_export_added_income_ignores_settled_users(test_db, monkeypatch)
             {"barcode": 1001, "name": "B", "rank": "R", "team": "T", "is_guest": 0},
         ]
     )
-    update_values(waste_strategy="equal_all")
+    update_values(
+        waste_strategy="equal_all",
+        last_stock_update_at="2026-01-01 10:01:00",
+    )
     monkeypatch.setattr(
         main_page_callbacks,
         "ctx",
@@ -753,7 +757,10 @@ def test_payment_export_uses_excel_file(test_db, monkeypatch):
         "prods",
     )
     add_sales([1000])
-    update_values(waste_strategy="equal_all")
+    update_values(
+        waste_strategy="equal_all",
+        last_stock_update_at="2026-01-01 10:01:00",
+    )
     monkeypatch.setattr(
         main_page_callbacks,
         "ctx",
@@ -1025,7 +1032,10 @@ def test_payment_export_persists_fresh_allocations(test_db, monkeypatch):
     )
     add_product()
     add_sales([1000])
-    update_values(waste_strategy="equal_all")
+    update_values(
+        waste_strategy="equal_all",
+        last_stock_update_at="2026-01-01 10:01:00",
+    )
     monkeypatch.setattr(
         main_page_callbacks,
         "ctx",
@@ -1040,13 +1050,213 @@ def test_payment_export_persists_fresh_allocations(test_db, monkeypatch):
     assert test_db._user_table.get()["waste_cents"].tolist() == [300, 300]
 
 
+def test_payment_export_requires_stock_update(test_db, monkeypatch):
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    add_product()
+    add_sales([1000])
+    update_values(waste_strategy="equal_all")
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "ctx",
+        types.SimpleNamespace(triggered_id="confirm_payments"),
+    )
+
+    result = main_page_callbacks.control_payments_modal(
+        None, 1, 0, "Up", 0, []
+    )
+
+    assert result[1] is main_page_callbacks.no_update
+    assert "Update stock before exporting payments" in result[2][0]["msg"]
+
+
+def test_payment_export_requires_stock_after_latest_purchase(test_db, monkeypatch):
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    add_product()
+    add_sales([1000])
+    update_values(
+        waste_strategy="equal_all",
+        last_stock_update_at="2026-01-01 09:59:00",
+    )
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "ctx",
+        types.SimpleNamespace(triggered_id="confirm_payments"),
+    )
+
+    result = main_page_callbacks.control_payments_modal(
+        None, 1, 0, "Up", 0, []
+    )
+
+    assert result[1] is main_page_callbacks.no_update
+    assert "Update stock after the latest purchase" in result[2][0]["msg"]
+
+
+def test_payment_export_warns_but_creates_file_for_unparseable_timestamps(
+    test_db, monkeypatch
+):
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    add_product()
+    add_transactions(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": 1000,
+                    "barcode_prod": 123,
+                    "timestamp": "not a timestamp",
+                }
+            ]
+        )
+    )
+    update_values(
+        waste_strategy="equal_all",
+        last_stock_update_at="2026-01-01 10:01:00",
+    )
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "ctx",
+        types.SimpleNamespace(triggered_id="confirm_payments"),
+    )
+
+    result = main_page_callbacks.control_payments_modal(
+        None, 1, 0, "Up", 0, []
+    )
+
+    assert result[0] is False
+    assert result[1]["filename"] == "swamp_machine_payments.xlsx"
+    assert "timestamps could not be checked" in result[2][0]["msg"]
+
+
+def test_stock_confirmation_records_timestamp(test_db):
+    add_users(
+        [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
+    )
+    add_product(current_stock=9)
+
+    confirm_new_stock([7])
+
+    assert get_last_stock_update_at() != ""
+
+
+def test_bill_preview_default_extra_percent_increases_stored_waste(test_db):
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": 200,
+            }
+        ]
+    )
+    user = test_db._user_table.get().iloc[0]
+
+    waste = get_preview_user_waste_cents(user, 200, 1)
+
+    assert waste == pytest.approx(300)
+
+
+def test_bill_preview_zero_extra_percent_preserves_base_waste(test_db):
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": 200,
+            }
+        ]
+    )
+    update_values(bill_preview_waste_extra_percent=0)
+    user = test_db._user_table.get().iloc[0]
+
+    assert get_preview_user_waste_cents(user, 200, 1) == 200
+
+
+def test_bill_preview_custom_extra_percent_is_applied(test_db):
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": 200,
+            }
+        ]
+    )
+    update_values(bill_preview_waste_extra_percent=25)
+    user = test_db._user_table.get().iloc[0]
+
+    assert get_preview_user_waste_cents(user, 200, 1) == 250
+
+
+def test_bill_preview_extra_percent_applies_to_fallback_share(test_db):
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": -1,
+            },
+            {
+                "barcode": 1001,
+                "name": "B",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": 600,
+            },
+        ]
+    )
+    update_values(waste_cents=600)
+    user = test_db._user_table.get()
+    user = user[user["barcode"] == 1000].iloc[0]
+
+    assert get_preview_user_waste_cents(user, 600, 2) == 450
+
+
 def test_payment_confirmation_refreshes_economy_layout(monkeypatch):
+    monkeypatch.setattr(
+        main_layout,
+        "ctx",
+        types.SimpleNamespace(triggered_id="confirm_payments"),
+    )
     monkeypatch.setattr(main_layout.time, "sleep", lambda _: None)
     marker = object()
     monkeypatch.setattr(main_layout, "user_settings_layout", lambda: marker)
     monkeypatch.setattr(main_layout, "product_settings_layout", lambda: marker)
     monkeypatch.setattr(main_layout, "transaction_settings_layout", lambda: marker)
 
-    result = main_layout.update_settings_layout(None, None, None, None, None, 1)
+    result = main_layout.update_settings_layout(None, False, None, None, None, None, 1)
+
+    assert result == (marker, marker, marker)
+
+
+def test_settings_modal_open_refreshes_settings_layouts(monkeypatch):
+    monkeypatch.setattr(
+        main_layout,
+        "ctx",
+        types.SimpleNamespace(triggered_id="settings_modal"),
+    )
+    marker = object()
+    monkeypatch.setattr(main_layout, "user_settings_layout", lambda: marker)
+    monkeypatch.setattr(main_layout, "product_settings_layout", lambda: marker)
+    monkeypatch.setattr(main_layout, "transaction_settings_layout", lambda: marker)
+
+    result = main_layout.update_settings_layout(None, True, None, None, None, None, None)
 
     assert result == (marker, marker, marker)

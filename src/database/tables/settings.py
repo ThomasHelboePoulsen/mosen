@@ -11,6 +11,8 @@ class SettingsTable(BaseTable):
         Column("waste_strategy", str, required=True),
         Column("backup", int, required=True),
         Column("cache_validation", int, required=True),
+        Column("last_stock_update_at", str, required=False, default=""),
+        Column("bill_preview_waste_extra_percent", int, required=True),
     ]
 
     create_sql = """
@@ -20,7 +22,9 @@ class SettingsTable(BaseTable):
             waste_cents INTEGER,
             waste_strategy varchar(255),
             backup INTEGER,
-            cache_validation INTEGER
+            cache_validation INTEGER,
+            last_stock_update_at varchar(255),
+            bill_preview_waste_extra_percent INTEGER
         )
     """
 
@@ -31,6 +35,8 @@ class SettingsTable(BaseTable):
         "waste_strategy": "equal_category_purchasers",
         "backup": 10,
         "cache_validation": 5,
+        "last_stock_update_at": "",
+        "bill_preview_waste_extra_percent": 50,
     }
 
     def ensure_defaults(self) -> None:

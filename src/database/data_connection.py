@@ -322,6 +322,16 @@ def get_waste_strategy():
     db._settings_table.ensure_defaults()
     return str(db.settings.iloc[0]["waste_strategy"])
 
+def get_last_stock_update_at():
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return str(db.settings.iloc[0]["last_stock_update_at"])
+
+def get_bill_preview_waste_extra_percent():
+    db = Container.get(Database)
+    db._settings_table.ensure_defaults()
+    return int(db.settings.iloc[0]["bill_preview_waste_extra_percent"])
+
 def update_values(
     password=None,
     show_bill=None,
@@ -330,6 +340,8 @@ def update_values(
     waste_strategy=None,
     backup_time=None,
     cache_validation_time=None,
+    last_stock_update_at=None,
+    bill_preview_waste_extra_percent=None,
 ):
     db = Container.get(Database)
     db._settings_table.ensure_defaults()
@@ -343,6 +355,8 @@ def update_values(
         "waste_strategy": waste_strategy,
         "backup": backup_time,
         "cache_validation": cache_validation_time,
+        "last_stock_update_at": last_stock_update_at,
+        "bill_preview_waste_extra_percent": bill_preview_waste_extra_percent,
     }
     for key, value in inps.items():
         if value is None:

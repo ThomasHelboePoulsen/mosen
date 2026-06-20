@@ -6,7 +6,7 @@ Swamp Machine/Mosemaskinen is a local trip purchase system. It is a Danish "stre
 
 Operational assumptions:
 
-- Trips use fresh data for each version; migrations are normally unnecessary.
+- Trips use fresh data for each version; migrations and schema-compatibility shims are normally unnecessary.
 - Laptops are weak and often offline.
 - The app can run in a browser, but is usually run as a locked-down self-checkout where normal users should not casually exit the app.
 - Runtime reliability matters more than broad extensibility.
@@ -39,7 +39,7 @@ Tables live in `src/database/tables/`:
 
 `BaseTable.set()` is replace mode: validate all rows, delete table contents, insert valid rows. `append()` validates against existing plus new rows and inserts only on full success.
 
-No migrations are expected by default. If schema changes are needed, update the table class, tests, and fresh DB behavior. Only add migrations if the user explicitly says old trip databases must survive.
+No migrations or schema-compatibility shims are expected by default. If schema changes are needed, update the table class, tests, and fresh DB behavior. Only add migrations or old-DB read fallbacks if the user explicitly says old trip databases must survive.
 
 ## Data Import
 
@@ -95,6 +95,8 @@ Use the local venv:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\test_file.py
 ```
+
+Do not substitute another Python interpreter for test runs. In the managed Codex sandbox this venv launcher may need escalated execution; if process launch fails, rerun the same venv command with escalation.
 
 Run focused tests first:
 

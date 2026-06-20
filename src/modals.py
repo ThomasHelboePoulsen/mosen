@@ -219,7 +219,7 @@ def export_payments_modal():
             dbc.ModalBody(
                 [
                     html.P(
-                        "Exporting recalculates and saves waste using the selected allocation strategy."
+                        "Export payments after the final stock update. Exporting recalculates and saves waste using the selected allocation strategy."
                     ),
                     html.Hr(),
                     dbc.Col(

@@ -14,6 +14,8 @@ from src.database.data_connection import (
     upload_values,
     get_password,
     get_backup_time,
+    get_bill_preview_waste_extra_percent,
+    get_last_stock_update_at,
     get_show_bill,
     get_waste,
     update_values,
@@ -499,13 +501,22 @@ class TestSettingsOperations:
         # Arrange
         
         # Act
-        update_values(password="alpha", show_bill=False, waste=12, backup_time=42)
+        update_values(
+            password="alpha",
+            show_bill=False,
+            waste=12,
+            backup_time=42,
+            last_stock_update_at="2026-01-01T10:00:00",
+            bill_preview_waste_extra_percent=25,
+        )
 
         # Assert
         assert get_password() == "alpha"
         assert get_show_bill() is False
         assert get_waste() == 12
         assert get_backup_time() == 42
+        assert get_last_stock_update_at() == "2026-01-01T10:00:00"
+        assert get_bill_preview_waste_extra_percent() == 25
 
     def test_current_trans_round_trip_through_cache(self, test_db):
         # Arrange

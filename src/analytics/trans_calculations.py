@@ -3,15 +3,7 @@ from src.database.data_connection import (
     get_users,
     get_prods,
 )
-
-
-def get_preview_user_waste_cents(user_row, total_waste_cents, user_count):
-    stored = int(user_row.get("waste_cents", -1))
-    if stored >= 0:
-        return stored
-    if user_count == 0:
-        return 0
-    return total_waste_cents / user_count
+from src.analytics.bill_preview import get_preview_user_waste_cents
 
 
 def get_revenue():

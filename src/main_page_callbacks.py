@@ -12,8 +12,10 @@ from src.database.data_connection import (
     update_values,
     reset_all_tables,
     get_waste,
+    get_last_stock_update_at,
 )
 from src.analytics.trans_calculations import get_income
+from src.analytics.timestamps import parse_timestamp, parse_transaction_timestamps
 from src.analytics.waste_allocation import allocate_waste
 from src.barcode_generator import generate_pdf
 from src.error_handler import append_error, callback_with_error_queue
@@ -28,6 +30,7 @@ import shutil
 import os
 import zipfile
 import builtins
+from dataclasses import dataclass
 from datetime import datetime
 
 
@@ -69,10 +72,19 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     Input({"index": ALL, "type": "database_upload"}, "contents"),
     Input({"index": ALL, "type": "database_upload"}, "id"),
     Input("waste_strategy", "value"),
+    Input("bill_preview_waste_extra_percent", "value"),
     State("settings_password", "value"),
 )
 @db_transaction_result
-def update_settings(pass_trigger, show_bill, db_tables, table_ids, waste_strategy, password):
+def update_settings(
+    pass_trigger,
+    show_bill,
+    db_tables,
+    table_ids,
+    waste_strategy,
+    bill_preview_waste_extra_percent,
+    password,
+):
     if (trigger := ctx.triggered_id) is None:
         return None, no_update, no_update, [no_update] * 3, no_update
     open_warning_password = False
@@ -96,7 +108,12 @@ def update_settings(pass_trigger, show_bill, db_tables, table_ids, waste_strateg
     if imports:
         create_database_backup(db.data_file, label="pre_import")
 
-    update_values(password, show_bill, waste_strategy=waste_strategy)
+    update_values(
+        password,
+        show_bill,
+        waste_strategy=waste_strategy,
+        bill_preview_waste_extra_percent=bill_preview_waste_extra_percent,
+    )
     if trigger == "confirm_new_password":
         return None, no_update, no_update, [no_update] * 3, True
 
@@ -148,13 +165,20 @@ def download_tables(trigger):
     State("up_down_dd", "value"),
     State("round_dd", "value"),
 )
-@db_transaction_raises
+@db_transaction_result
 def control_payments_modal(open_trigger, close_trigger, added_value, up_down, round):
     trigger = ctx.triggered_id
     if trigger == "export_payments_btn" and open_trigger:
         return True, no_update
     elif trigger == "confirm_payments" and close_trigger:
         db = Container.get(Database)
+        warning = _validate_payment_export_stock_freshness()
+        if warning.block_export:
+            return TransactionResult(
+                (no_update, no_update),
+                error=ValueError(warning.message),
+                commit=False,
+            )
         allocate_waste(db)
         income = pd.DataFrame(get_income())
         active = (income["#products"] > 0) & (income["price"] > 0)
@@ -169,13 +193,52 @@ def control_payments_modal(open_trigger, close_trigger, added_value, up_down, ro
                 rounding = lambda x: float(x) - (float(x) % round)
             positive = income["price"] > 0
             income.loc[positive, "price"] = income.loc[positive, "price"].apply(rounding)
-        return False, dcc.send_data_frame(
-            income.to_excel,
-            filename="swamp_machine_payments.xlsx",
-            index=False,
+        result = (
+            False,
+            dcc.send_data_frame(
+                income.to_excel,
+                filename="swamp_machine_payments.xlsx",
+                index=False,
+            ),
         )
+        if warning.message:
+            return TransactionResult(result, error=ValueError(warning.message))
+        return result
     else:
         return no_update, no_update
+
+
+@dataclass
+class PaymentExportWarning:
+    message: str = ""
+    block_export: bool = False
+
+
+def _validate_payment_export_stock_freshness():
+    last_stock_update = parse_timestamp(get_last_stock_update_at())
+    if last_stock_update is None:
+        return PaymentExportWarning(
+            "Update stock before exporting payments.",
+            block_export=True,
+        )
+
+    transactions = get_trans()
+    if len(transactions) == 0:
+        return PaymentExportWarning()
+
+    parsed, failures = parse_transaction_timestamps(transactions["timestamp"])
+    if parsed and max(parsed) > last_stock_update:
+        return PaymentExportWarning(
+            "Update stock after the latest purchase before exporting payments.",
+            block_export=True,
+        )
+    if failures:
+        return PaymentExportWarning(
+            "Payment export created, but some transaction timestamps could not be checked against the last stock update.",
+            block_export=False,
+        )
+    return PaymentExportWarning()
+
 
 @callback_with_error_queue(1,
     Output("pdf_download", "data"),

@@ -21,7 +21,7 @@ from src.database.data_connection import (
     get_show_bill,
     get_waste_cents,
 )
-from src.analytics.trans_calculations import get_preview_user_waste_cents
+from src.analytics.bill_preview import get_preview_user_waste_cents
 from src.analytics.bar_chart_format import format_count_bar_chart
 
 

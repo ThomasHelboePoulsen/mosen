@@ -1,10 +1,12 @@
 import pandas as pd
+from datetime import datetime
 from dash import callback, Output, Input, State, html, ctx, ALL, MATCH, no_update
 from src.barcode import BarcodePartition, is_barcode
 from src.database.data_connection import (
     get_prods,
     get_trans,
     db_transaction_raises,
+    update_values,
 )
 from src.analytics.waste_allocation import allocate_waste
 from src.container import Container
@@ -142,3 +144,4 @@ def confirm_new_stock(inps):
     prods["current_stock"] = [int(val) for val in list(inps)]
     db.upload_values_raises(prods, "prods")
     allocate_waste(db)
+    update_values(last_stock_update_at=datetime.now().isoformat(timespec="seconds"))

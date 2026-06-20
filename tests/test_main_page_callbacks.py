@@ -65,6 +65,7 @@ def test_successful_import_commits_settings_and_data_after_backup(
         [encoded_csv, None, None],
         [{"index": "users"}, {"index": "prods"}, {"index": "transactions"}],
         "equal_category_purchasers",
+        50,
         "pw",
     )
 
@@ -117,6 +118,7 @@ def test_non_upload_settings_trigger_does_not_reimport_stale_upload(
         [stale_upload, None, None],
         [{"index": "users"}, {"index": "prods"}, {"index": "transactions"}],
         "equal_category_purchasers",
+        50,
         "pw",
     )
 
@@ -159,6 +161,7 @@ def test_failed_import_rolls_back_changes_but_keeps_pre_import_backup(
         [invalid_upload, None, None],
         [{"index": "users"}, {"index": "prods"}, {"index": "transactions"}],
         "equal_all",
+        50,
         "pw",
     )
 
