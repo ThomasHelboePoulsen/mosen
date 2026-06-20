@@ -3,6 +3,60 @@ import pandas as pd
 from dash import no_update
 
 from src import trans_layout
+from src.database.data_connection import update_values
+
+
+def _load_balance_graph_data(temp_db):
+    temp_db.upload_values(
+        [
+            {"barcode": "1000", "name": "Anna", "rank": "r", "team": "t"},
+            {"barcode": "1001", "name": "Bo", "rank": "r", "team": "t"},
+            {"barcode": "1002", "name": "No Purchases", "rank": "r", "team": "t"},
+        ],
+        "users",
+    )
+    temp_db.upload_values(
+        [
+            {
+                "barcode": "100",
+                "name": "Beer",
+                "price": 10.0,
+                "category": "c",
+                "current_stock": 10,
+                "initial_stock": 10,
+            },
+            {
+                "barcode": "101",
+                "name": "Soda",
+                "price": 5.0,
+                "category": "c",
+                "current_stock": 10,
+                "initial_stock": 10,
+            },
+        ],
+        "prods",
+    )
+    temp_db._transaction_table.append(
+        pd.DataFrame(
+            [
+                {
+                    "barcode_user": "1000",
+                    "barcode_prod": "100",
+                    "timestamp": "2026-01-01 10:00:00",
+                },
+                {
+                    "barcode_user": "1000",
+                    "barcode_prod": "100",
+                    "timestamp": "2026-01-01 10:01:00",
+                },
+                {
+                    "barcode_user": "1001",
+                    "barcode_prod": "101",
+                    "timestamp": "2026-01-01 10:02:00",
+                },
+            ]
+        )
+    )
 
 
 def test_bad_barcode_open(monkeypatch, temp_db):
@@ -114,6 +168,105 @@ def test_transaction_graph_hides_index_axis_labels(monkeypatch, temp_db):
     assert fig.layout.xaxis.showticklabels is False
     assert fig.layout.yaxis.title.text == "amount"
     assert fig.layout.yaxis.dtick == 1
+
+
+def test_transaction_graph_counts_only_selected_user(monkeypatch, temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "1000")
+
+    # Act
+    fig, error = trans_layout.get_transactions(1, "1000", [])
+
+    # Assert
+    assert error is no_update
+    assert [trace.name for trace in fig.data] == ["Beer"]
+    assert list(fig.data[0].y) == [2]
+
+
+def test_transaction_graph_empty_for_user_without_transactions(monkeypatch, temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "1002")
+
+    # Act
+    fig, error = trans_layout.get_transactions(1, "1002", [])
+
+    # Assert
+    assert error is no_update
+    assert len(fig.data) == 0
+    assert fig.layout.xaxis.showticklabels is False
+    assert fig.layout.yaxis.dtick == 1
+
+
+def test_transaction_graph_unknown_user_adds_error(monkeypatch, temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "9999")
+
+    # Act
+    fig, error = trans_layout.get_transactions(1, "9999", [])
+
+    # Assert
+    assert fig is no_update
+    assert isinstance(error, list)
+    assert "User not found" in error[0]["msg"]
+
+
+def test_show_balance_with_bill_enabled_uses_only_selected_user_transactions(temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    update_values(
+        show_bill=True,
+        waste_cents=0,
+        bill_preview_waste_extra_percent=0,
+    )
+
+    # Act
+    result = trans_layout.show_balance(1, "1000")
+
+    # Assert
+    assert result == "Anna - Current bill is approximately: 20"
+
+
+def test_show_balance_with_bill_disabled_returns_only_user_name(temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    update_values(show_bill=False)
+
+    # Act
+    result = trans_layout.show_balance(1, "1000")
+
+    # Assert
+    assert result == "Anna"
+
+
+def test_show_balance_unknown_user_returns_no_update(temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    update_values(show_bill=True)
+
+    # Act
+    result = trans_layout.show_balance(1, "9999")
+
+    # Assert
+    assert result is no_update
+
+
+def test_show_balance_includes_waste_preview(temp_db):
+    # Arrange
+    _load_balance_graph_data(temp_db)
+    update_values(
+        show_bill=True,
+        waste_cents=300,
+        bill_preview_waste_extra_percent=0,
+    )
+
+    # Act
+    result = trans_layout.show_balance(1, "1000")
+
+    # Assert
+    assert result == "Anna - Current bill is approximately: 21"
 
 
 def test_paid_user_cannot_open_transaction_modal(monkeypatch, temp_db):

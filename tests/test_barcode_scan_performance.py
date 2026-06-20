@@ -13,8 +13,9 @@ from src.database.data_connection import Database, update_values
 
 #Testing that key workflows are respondant under large loads.
 #We test callback time, not render, transport or other parts.
-OPEN_WORKFLOW_LIMIT_SECONDS = 0.5
-PRODUCT_SCAN_WORKFLOW_LIMIT_SECONDS = 0.15
+#This is machine dependent, so tune it to your machine and see if performance is good enough.
+OPEN_WORKFLOW_LIMIT_SECONDS = 0.3
+PRODUCT_SCAN_WORKFLOW_LIMIT_SECONDS = 0.1
 SUBMIT_WORKFLOW_LIMIT_SECONDS = 0.5
 BURST_SCAN_COUNT = 20
 BURST_LIMIT_SECONDS = 0.6

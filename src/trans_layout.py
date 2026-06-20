@@ -97,15 +97,21 @@ def get_transactions(trigger, barcode):
     if trigger is None:
         return no_update, no_update
     users = get_users()
-    prods = get_prods()
     barcode = get_barcode(barcode)
-    transactions = get_trans().merge(
-        prods, "right", left_on="barcode_prod", right_on="barcode"
-    )
     user_barcodes = list(map(str, users["barcode"]))
     if not (str(barcode) in user_barcodes):
         raise ValueError("User not found")
-    user_trans = transactions[transactions["barcode_user"] == str(barcode)]
+    transactions = get_trans()
+    user_trans = transactions[transactions["barcode_user"] == str(barcode)].copy()
+    if len(user_trans) == 0:
+        return format_count_bar_chart(px.bar([{}]), show_x_tick_labels=False)
+
+    prods = get_prods()
+    prod_names = {str(p["barcode"]): p["name"] for _, p in prods.iterrows()}
+    user_trans["name"] = user_trans["barcode_prod"].map(
+        lambda value: prod_names.get(str(value))
+    )
+    user_trans = user_trans[user_trans["name"].notna()]
     trans_data = [user_trans["name"].value_counts().to_dict()]
     return format_count_bar_chart(px.bar(trans_data), show_x_tick_labels=False)
 
@@ -248,31 +254,26 @@ def new_trans(trigger, _barcode, user_barcode):
 def show_balance(trigger, user_id):
     if trigger is None:
         return no_update
+    users = get_users()
+    user_id = get_barcode(user_id)
+    try:
+        user_row = users[users["barcode"] == str(user_id)].iloc[0]
+        user = str(user_row["name"])
+    except:
+        return no_update
+
     if not get_show_bill():
-        users = get_users()
-        try:
-            user = str(users[users["barcode"] == str(user_id)]["name"].values[0])
-        except:
-            return no_update
         return str(user)
     else:
         trans = get_trans()
-        users = get_users()
+        user_trans = trans[trans["barcode_user"] == str(user_id)].copy()
         prods = get_prods()
         price_dict = {str(p["barcode"]): p["price"] for _, p in prods.iterrows()}
-        trans["price"] = trans["barcode_prod"].apply(
-            lambda x: price_dict[str(x)] if str(x) in list(price_dict.keys()) else 0
+        user_trans["price"] = user_trans["barcode_prod"].map(
+            lambda x: price_dict.get(str(x), 0)
         )
 
-        user_id = get_barcode(user_id)
-        try:
-            user_row = users[users["barcode"] == str(user_id)].iloc[0]
-            user = str(user_row["name"])
-        except:
-            return no_update
-        user_balance = sum(
-            map(float, trans[trans["barcode_user"] == str(user_id)]["price"])
-        )
+        user_balance = sum(map(float, user_trans["price"]))
         user_waste = get_preview_user_waste_cents(
             user_row,
             get_waste_cents(),
