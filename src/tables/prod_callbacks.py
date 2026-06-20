@@ -13,6 +13,8 @@ from src.container import Container
 from src.database.data_connection import Database
 from src.error_handler import callback_with_error_queue, Result
 
+PRODUCT_FORM_COLUMNS = ["barcode", "name", "price", "category", "initial_stock"]
+
 
 @callback(
     Output("new_prod_modal", "is_open", allow_duplicate=True),
@@ -62,7 +64,23 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
             barcode_mask = data["barcode"] == int(edit_barcode)
             data = data[~barcode_mask].copy()
 
-        new_row = {col.name: val for col, val in zip(table.columns, vals)}
+        form_row = {
+            column: val for column, val in zip(PRODUCT_FORM_COLUMNS, vals)
+        }
+        existing_current_stock = None
+        if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
+            existing = table.get()
+            existing = existing[existing["barcode"] == int(edit_barcode)]
+            existing_current_stock = int(existing.iloc[0]["current_stock"])
+            
+        new_row = {
+            **form_row,
+            "current_stock": (
+                existing_current_stock
+                if existing_current_stock is not None
+                else form_row["initial_stock"]
+            ),
+        }
         
         data = pd.concat([data, pd.DataFrame([new_row])])
         success, bad_rows = db.try_upload_values(data, "prods") 

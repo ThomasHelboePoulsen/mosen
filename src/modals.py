@@ -79,7 +79,7 @@ def new_user_modal():
     return mdl
 
 
-PROD_COLS = ["price", "category", "current_stock", "initial_stock"]
+PROD_COLS = ["price", "category", "initial_stock"]
 
 prod_body = [
     dbc.Input(
@@ -97,8 +97,7 @@ prod_body = [
 for col in PROD_COLS:
     prod_body.append(
         dbc.Input(
-            placeholder=col.replace("_", " ").title()
-            + ("(typically same as Initial Stock)" if col == "current_stock" else ""),
+            placeholder=col.replace("_", " ").title(),
             id={"type": "prod_input", "index": f"inp_{col}_prod"},
             type="text" if col == "category" else "number",
         )

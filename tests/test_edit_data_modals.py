@@ -6,6 +6,8 @@ from src.container import Container
 from src.database.data_connection import Database, add_transactions, upload_values
 from src.main_page_callbacks import edit_new_data_modals
 
+PRODUCT_FORM_FIELD_COUNT = 5
+
 
 @pytest.fixture
 def temp_db(tmp_path):
@@ -51,7 +53,7 @@ class TestDeleteUserByBarcode:
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_delete"
         user_col_count = 6
-        prod_col_count = len(temp_db._product_table.columns)
+        prod_col_count = PRODUCT_FORM_FIELD_COUNT
 
         # Act
         result = edit_new_data_modals(1, None, "users", 1500, [])
@@ -75,7 +77,7 @@ class TestDeleteProductByBarcode:
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_delete"
         user_col_count = 6
-        prod_col_count = len(temp_db._product_table.columns)
+        prod_col_count = PRODUCT_FORM_FIELD_COUNT
 
         # Act
         result = edit_new_data_modals(1, None, "prods", 101, [])
@@ -142,7 +144,7 @@ class TestDeleteWithTransactions:
             no_update,
             no_update,
             [no_update] * 6,
-            [no_update] * len(temp_db._product_table.columns),
+            [no_update] * PRODUCT_FORM_FIELD_COUNT,
             no_update,
             no_update,
         )
@@ -179,7 +181,7 @@ class TestDeleteWithTransactions:
             no_update,
             no_update,
             [no_update] * 6,
-            [no_update] * len(temp_db._product_table.columns),
+            [no_update] * PRODUCT_FORM_FIELD_COUNT,
             no_update,
             no_update,
         )
@@ -196,7 +198,7 @@ class TestEditBranch:
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_edit"
         user_col_count = 6
-        prod_col_count = len(temp_db._product_table.columns)
+        prod_col_count = PRODUCT_FORM_FIELD_COUNT
 
         # Act
         result = edit_new_data_modals(
@@ -257,7 +259,7 @@ class TestEditBranch:
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_edit"
         user_col_count = 6
-        prod_col_count = len(temp_db._product_table.columns)
+        prod_col_count = PRODUCT_FORM_FIELD_COUNT
 
         # Act
         result = edit_new_data_modals(
@@ -272,14 +274,13 @@ class TestEditBranch:
         assert result[0] is False  # new_user_modal stays closed
         assert result[1] is True  # new_prod_modal opens
         assert result[2] == [no_update] * user_col_count
-        # Product form data is all fields from row: [barcode, name, price, category, current_stock, initial_stock]
+        # Product form data is visible fields: [barcode, name, price, category, initial_stock]
         # Note: callback returns untyped data (strings) from get_prods()
         assert result[3][0] == 101  # barcode (untyped from get_prods)
         assert result[3][1] == "Beer"  # name
         assert result[3][2] == 5.0  # price (untyped)
         assert result[3][3] == "Beverage"  # category
-        assert result[3][4] == 10  # current_stock (untyped)
-        assert result[3][5] == 20  # initial_stock (untyped)
+        assert result[3][4] == 20  # initial_stock (untyped)
         assert result[4] is no_update  # user_table data
         assert result[5] is no_update  # prod_table data
 
@@ -299,7 +300,7 @@ class TestEdgeCases:
         assert result[0] is no_update
         assert result[1] is no_update
         assert result[2] == [no_update] * 6
-        assert result[3] == [no_update] * len(temp_db._product_table.columns)
+        assert result[3] == [no_update] * PRODUCT_FORM_FIELD_COUNT
         assert result[4] is no_update
         assert result[5] is no_update
 
@@ -316,7 +317,7 @@ class TestEdgeCases:
         assert result[0] is no_update
         assert result[1] is no_update
         assert result[2] == [no_update] * 6
-        assert result[3] == [no_update] * len(temp_db._product_table.columns)
+        assert result[3] == [no_update] * PRODUCT_FORM_FIELD_COUNT
         assert result[4] is no_update
         assert result[5] is no_update
 
@@ -333,7 +334,7 @@ class TestEdgeCases:
         assert result[0] is no_update
         assert result[1] is no_update
         assert result[2] == [no_update] * 6
-        assert result[3] == [no_update] * len(temp_db._product_table.columns)
+        assert result[3] == [no_update] * PRODUCT_FORM_FIELD_COUNT
         assert result[4] is no_update
         assert result[5] is no_update
 
@@ -350,7 +351,7 @@ class TestEdgeCases:
         assert result[0] is no_update
         assert result[1] is no_update
         assert result[2] == [no_update] * 6
-        assert result[3] == [no_update] * len(temp_db._product_table.columns)
+        assert result[3] == [no_update] * PRODUCT_FORM_FIELD_COUNT
         assert result[4] is no_update
         assert result[5] is no_update
 

@@ -335,7 +335,7 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit):
         no_update,
         no_update,
         [no_update] * 6,
-        [no_update] * 6,
+        [no_update] * 5,
         no_update,
         no_update,
     )
@@ -345,7 +345,7 @@ def edit_new_data_modals(delete, edit, table, barcode):
     user_table = db._user_table
     prod_table = db._product_table
     user_col_count = 6
-    prod_col_count = len(prod_table.columns)
+    prod_col_count = 5
 
     trigger = ctx.triggered_id
     if trigger == "edit_modal_delete" and barcode is not None:
@@ -407,7 +407,14 @@ def edit_new_data_modals(delete, edit, table, barcode):
             row = data[data["barcode"] == int(barcode)]
             if len(row) == 0:
                 return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
-            row = list(row.values[0])
+            row_dict = row.iloc[0].to_dict()
+            row = [
+                row_dict["barcode"],
+                row_dict["name"],
+                row_dict["price"],
+                row_dict["category"],
+                row_dict["initial_stock"],
+            ]
             return False, True, [no_update] * user_col_count, row, no_update, no_update
     else:
         return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update

@@ -3,7 +3,15 @@ import pandas as pd
 from unittest.mock import patch
 from dash import no_update
 from src.container import Container
-from src.database.data_connection import Database, get_prods, get_trans, upload_values, add_transactions, update_values
+from src.database.data_connection import (
+    Database,
+    get_last_stock_update_at,
+    get_prods,
+    get_trans,
+    upload_values,
+    add_transactions,
+    update_values,
+)
 from src.tables.prod_callbacks import add_row, validate_barcode_prod, open_prod_modal, open_stock, confirm_new_stock
 from src.analytics.product_calculations import calculate_waste
 
@@ -77,7 +85,7 @@ class TestProdCallbacksAddRow:
 
     def test_add_row_creates_new_product(self, test_db):
         # Arrange
-        vals = [456, "Soda", 3.0, "Beverage", 15, 30]
+        vals = [456, "Soda", 3.0, "Beverage", 30]
         
         # Act
         result, edit_value = add_row(1, None, vals, None)
@@ -87,6 +95,8 @@ class TestProdCallbacksAddRow:
         assert len(prods) == 1
         assert prods.iloc[0]["barcode"] == "456"
         assert prods.iloc[0]["name"] == "Soda"
+        assert prods.iloc[0]["current_stock"] == "30"
+        assert prods.iloc[0]["initial_stock"] == "30"
 
     def test_add_row_with_edit_replaces_existing_product(self, test_db):
         # Arrange
@@ -94,7 +104,7 @@ class TestProdCallbacksAddRow:
             {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
         ])
         upload_values(prod_data, "prods")
-        vals = [456, "Wine", 8.0, "Alcohol", 5, 15]
+        vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
         result, edit_value = add_row(1, None, vals, 123)
@@ -104,6 +114,33 @@ class TestProdCallbacksAddRow:
         assert len(prods) == 1
         assert prods.iloc[0]["barcode"] == "456"
         assert prods.iloc[0]["name"] == "Wine"
+        assert prods.iloc[0]["current_stock"] == "10"
+        assert prods.iloc[0]["initial_stock"] == "15"
+
+    def test_add_row_edit_does_not_record_stock_update(self, test_db):
+        # Arrange
+        upload_values(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode": 123,
+                        "name": "Beer",
+                        "price": 5.0,
+                        "category": "Beverage",
+                        "current_stock": 10,
+                        "initial_stock": 20,
+                    }
+                ]
+            ),
+            "prods",
+        )
+        vals = [123, "Beer", 5.0, "Beverage", 30]
+
+        # Act
+        add_row(1, None, vals, 123)
+
+        # Assert
+        assert get_last_stock_update_at() == ""
 
     def test_add_row_no_cascade_on_new_product(self, test_db):
         # Arrange
@@ -123,7 +160,7 @@ class TestProdCallbacksAddRow:
             {"barcode_user": "1500", "barcode_prod": "123", "timestamp": "2024-01-01 12:00:00"}
         ]
         add_transactions(pd.DataFrame(trans_data))
-        vals = [456, "Wine", 8.0, "Alcohol", 5, 15]
+        vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
         result, edit_value = add_row(1, None, vals, None)
@@ -134,7 +171,7 @@ class TestProdCallbacksAddRow:
 
     def test_add_row_with_n_clicks_none_returns_no_update(self, test_db):
         # Arrange
-        vals = [456, "Wine", 8.0, "Alcohol", 5, 15]
+        vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
         result, edit_value = add_row(None, None, vals, None)
