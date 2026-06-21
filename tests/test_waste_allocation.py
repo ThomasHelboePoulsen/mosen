@@ -77,6 +77,31 @@ def add_sales(barcodes):
     )
 
 
+def _find_component_by_id(component, target_id):
+    if getattr(component, "id", None) == target_id:
+        return component
+
+    children = getattr(component, "children", None)
+    if children is None:
+        return None
+    if not isinstance(children, (list, tuple)):
+        children = [children]
+
+    for child in children:
+        found = _find_component_by_id(child, target_id)
+        if found is not None:
+            return found
+    return None
+
+def test_settings_dropdown_uses_strategy_options_with_hover_titles(test_db):
+    layout = main_layout.settings_settings_layout()
+
+    dropdown = _find_component_by_id(layout, "waste_strategy")
+
+    assert dropdown is not None
+    assert dropdown.options == get_strategy_options()
+
+
 def test_equal_active_includes_guests_and_rounds_up(test_db):
     add_users(
         [

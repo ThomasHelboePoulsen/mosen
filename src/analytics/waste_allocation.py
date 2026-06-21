@@ -10,6 +10,7 @@ from src.analytics.product_calculations import (
 
 class WasteAllocationStrategy(ABC):
     label: str
+    description: str
 
     @abstractmethod
     def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
@@ -58,6 +59,10 @@ def _settled_prepaid_waste_cents(users, products, transactions) -> dict[str, int
 
 class EqualAllStrategy(WasteAllocationStrategy):
     label = "Equal all users"
+    description = (
+        "Split all waste equally between all unsettled users, including users "
+        "without purchases."
+    )
 
     def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
         users = db._user_table.get()
@@ -67,6 +72,10 @@ class EqualAllStrategy(WasteAllocationStrategy):
 
 class EqualActiveStrategy(WasteAllocationStrategy):
     label = "Equal active users"
+    description = (
+        "Split all waste equally between unsettled users who have made purchases. "
+        "Falls back to all unsettled users if no active users exist."
+    )
 
     def allocate(self, db, total_waste_cents: int) -> dict[str, int]:
         users = db._user_table.get()
@@ -87,6 +96,11 @@ class EqualActiveStrategy(WasteAllocationStrategy):
 
 class EqualCategoryPurchasersStrategy(WasteAllocationStrategy):
     label = "Equal category purchasers"
+    description = (
+        "Split waste by product category, charging users who bought from "
+        "categories with waste. Falls back to active users, then all users, if "
+        "needed."
+    )
 
     @staticmethod
     def _round_up_to_whole_krone(amount: Fraction) -> int:
@@ -159,7 +173,7 @@ STRATEGIES = {
 
 def get_strategy_options() -> list[dict[str, str]]:
     return [
-        {"label": strategy.label, "value": key}
+        {"label": strategy.label, "value": key, "title": strategy.description}
         for key, strategy in STRATEGIES.items()
     ]
 
