@@ -8,17 +8,30 @@ from dash import no_update
 
 from src import main_page_callbacks
 from src import trans_layout
+from src.analytics.overview_plot import create_overview_data, create_overview_figure
 from src.container import Container
-from src.database.data_connection import Database, update_values
+from src.database.data_connection import (
+    Database,
+    get_prods,
+    get_trans,
+    get_users,
+    update_values,
+)
 
 #Testing that key workflows are respondant under large loads.
 #We test callback time, not render, transport or other parts.
 #This is machine dependent, so tune it to your machine and see if performance is good enough.
 OPEN_WORKFLOW_LIMIT_SECONDS = 0.3
 PRODUCT_SCAN_WORKFLOW_LIMIT_SECONDS = 0.1
-SUBMIT_WORKFLOW_LIMIT_SECONDS = 0.5
+SUBMIT_WORKFLOW_LIMIT_SECONDS = 0.4
+CHECKOUT_PHASE_LIMIT_SECONDS = 0.15
+CART_RESET_PHASE_LIMIT_SECONDS = 0.1
+OVERVIEW_PHASE_LIMIT_SECONDS = 0.2
+OVERVIEW_DB_READS_PHASE_LIMIT_SECONDS = 0.1
+OVERVIEW_DATA_PHASE_LIMIT_SECONDS = 0.1
+OVERVIEW_FIGURE_PHASE_LIMIT_SECONDS = 0.1
 BURST_SCAN_COUNT = 20
-BURST_LIMIT_SECONDS = 0.6
+BURST_LIMIT_SECONDS = 0.5
 USER_BARCODE = "1000"
 PRODUCT_BARCODE = "100"
 AVG_PURCHASES_PER_USER = 30
@@ -252,6 +265,19 @@ def _assert_group_runs_under(label, limit_seconds, action):
     return result
 
 
+def _measure(action):
+    start = time.perf_counter()
+    result = action()
+    elapsed = time.perf_counter() - start
+    return result, elapsed
+
+
+def _format_phase_timings(timings):
+    return " ".join(
+        f"{phase}={elapsed:.3f}s" for phase, elapsed in timings.items()
+    )
+
+
 def _set_trans_trigger(monkeypatch, trigger_id):
     monkeypatch.setattr(
         trans_layout,
@@ -291,6 +317,32 @@ def _reset_cart_display(monkeypatch, user_barcode=USER_BARCODE):
 def _refresh_overview(monkeypatch, graph_col="rank", average=False):
     _set_overview_trigger(monkeypatch)
     return main_page_callbacks.update_overview_graph(False, graph_col, average)
+
+
+def _refresh_overview_parts(graph_col="rank", average=False):
+    timings = {}
+
+    inputs, timings["overview_db_reads"] = _measure(
+        lambda: {
+            "prods": get_prods(),
+            "transactions": get_trans(),
+            "users": get_users(),
+        }
+    )
+    overview_data, timings["overview_data"] = _measure(
+        lambda: create_overview_data(
+            inputs["prods"],
+            inputs["transactions"],
+            inputs["users"],
+            graph_col,
+            average,
+        )
+    )
+    overview_figure, timings["overview_figure"] = _measure(
+        lambda: create_overview_figure(overview_data)
+    )
+
+    return overview_figure, timings
 
 
 def _open_basket_workflow(monkeypatch, user_barcode=USER_BARCODE):
@@ -349,6 +401,65 @@ def _submit_purchase_workflow(monkeypatch, graph_col="rank", average=False):
         }
     )
     return checkout_result, downstream_results, downstream_errors
+
+
+def _measure_submit_phases(monkeypatch, graph_col="rank", average=False):
+    timings = {}
+
+    checkout_result, timings["checkout"] = _measure(
+        lambda: _submit_basket(monkeypatch)
+    )
+    cart_reset_result, timings["cart_reset"] = _measure(
+        lambda: _reset_cart_display(monkeypatch)
+    )
+    (overview_result, overview_timings), timings["overview"] = _measure(
+        lambda: _refresh_overview_parts(graph_col, average)
+    )
+    timings.update(overview_timings)
+
+    return (
+        {
+            "checkout": checkout_result,
+            "cart_reset": cart_reset_result,
+            "overview": overview_result,
+        },
+        timings,
+    )
+
+
+def _assert_submit_phases_under_limits(label, results, timings):
+    timing_details = _format_phase_timings(timings)
+
+    assert timings["checkout"] < CHECKOUT_PHASE_LIMIT_SECONDS, (
+        f"{label} checkout phase exceeded "
+        f"{CHECKOUT_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    )
+    assert timings["cart_reset"] < CART_RESET_PHASE_LIMIT_SECONDS, (
+        f"{label} cart reset phase exceeded "
+        f"{CART_RESET_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    )
+    assert timings["overview"] < OVERVIEW_PHASE_LIMIT_SECONDS, (
+        f"{label} overview phase exceeded "
+        f"{OVERVIEW_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    )
+    assert timings["overview_db_reads"] < OVERVIEW_DB_READS_PHASE_LIMIT_SECONDS, (
+        f"{label} overview DB reads phase exceeded "
+        f"{OVERVIEW_DB_READS_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    )
+    assert timings["overview_data"] < OVERVIEW_DATA_PHASE_LIMIT_SECONDS, (
+        f"{label} overview data phase exceeded "
+        f"{OVERVIEW_DATA_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    )
+    assert timings["overview_figure"] < OVERVIEW_FIGURE_PHASE_LIMIT_SECONDS, (
+        f"{label} overview figure phase exceeded "
+        f"{OVERVIEW_FIGURE_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    )
+
+    assert results["checkout"][0] is False
+    assert results["checkout"][3] is no_update
+    assert results["cart_reset"][1] == ""
+    assert results["cart_reset"][2] is no_update
+    assert results["overview"] is not no_update
 
 
 def _load_temporary_basket(db, product_count):
@@ -460,6 +571,20 @@ def test_scan_user_barcode_submits_purchase_workflow_under_limit(
     assert len(scan_db._transaction_table.get()) == transactions_before + 10
 
 
+def test_submit_phase_diagnostics_baseline(scan_db, monkeypatch):
+    # Arrange
+    _refresh_overview(monkeypatch)
+    _load_temporary_basket(scan_db, product_count=10)
+    transactions_before = len(scan_db._transaction_table.get())
+
+    # Act
+    results, timings = _measure_submit_phases(monkeypatch)
+
+    # Assert
+    _assert_submit_phases_under_limits("baseline submit", results, timings)
+    assert len(scan_db._transaction_table.get()) == transactions_before + 10
+
+
 def test_skewed_category_submit_product_overview_under_limit(
     skewed_category_scan_db,
     monkeypatch,
@@ -490,6 +615,33 @@ def test_skewed_category_submit_product_overview_under_limit(
     )
 
 
+def test_submit_phase_diagnostics_skewed_category_product_overview(
+    skewed_category_scan_db,
+    monkeypatch,
+):
+    # Arrange
+    _refresh_overview(monkeypatch, graph_col="products", average=True)
+    _load_temporary_basket(skewed_category_scan_db, product_count=10)
+    transactions_before = len(skewed_category_scan_db._transaction_table.get())
+
+    # Act
+    results, timings = _measure_submit_phases(
+        monkeypatch,
+        graph_col="products",
+        average=True,
+    )
+
+    # Assert
+    _assert_submit_phases_under_limits(
+        "skewed category product overview submit",
+        results,
+        timings,
+    )
+    assert len(skewed_category_scan_db._transaction_table.get()) == (
+        transactions_before + 10
+    )
+
+
 @pytest.mark.parametrize("graph_col", ["team", "rank"])
 def test_wide_group_submit_overview_under_limit(
     wide_group_scan_db,
@@ -513,6 +665,29 @@ def test_wide_group_submit_overview_under_limit(
     assert downstream_errors == {}
     assert downstream_results["cart_reset"][1] == ""
     assert downstream_results["overview"] is not no_update
+    assert len(wide_group_scan_db._transaction_table.get()) == transactions_before + 10
+
+
+@pytest.mark.parametrize("graph_col", ["team", "rank"])
+def test_submit_phase_diagnostics_wide_group_overview(
+    wide_group_scan_db,
+    monkeypatch,
+    graph_col,
+):
+    # Arrange
+    _refresh_overview(monkeypatch, graph_col=graph_col)
+    _load_temporary_basket(wide_group_scan_db, product_count=10)
+    transactions_before = len(wide_group_scan_db._transaction_table.get())
+
+    # Act
+    results, timings = _measure_submit_phases(monkeypatch, graph_col=graph_col)
+
+    # Assert
+    _assert_submit_phases_under_limits(
+        f"wide {graph_col} overview submit",
+        results,
+        timings,
+    )
     assert len(wide_group_scan_db._transaction_table.get()) == transactions_before + 10
 
 

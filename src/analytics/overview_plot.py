@@ -1,4 +1,6 @@
-from plotly import express as px
+from math import nan
+
+from plotly import graph_objects as go
 from src.analytics.bar_chart_format import format_count_bar_chart
 from src.database.data_connection import (
     get_prods,
@@ -112,17 +114,18 @@ def create_overview_data(prods, transactions, users, plot_col, average=False):
 
 
 def create_overview_figure(overview_data):
-    if (
-        overview_data["overview_df"] == []
-        and overview_data["ranks"] == []
-        and overview_data["y"] == []
-    ):
-        return format_count_bar_chart(px.bar())
-    fig = px.bar(
-        overview_data["overview_df"],
-        x=overview_data["ranks"],
-        y=overview_data["y"],
-    )
+    fig = go.Figure()
+    for product_name in overview_data["y"]:
+        fig.add_bar(
+            name=product_name,
+            x=overview_data["ranks"],
+            y=[
+                rank_counts.get(product_name, nan)
+                for rank_counts in overview_data["overview_df"]
+            ],
+        )
+
+    fig.update_layout(barmode="relative")
     return format_count_bar_chart(fig)
 
 

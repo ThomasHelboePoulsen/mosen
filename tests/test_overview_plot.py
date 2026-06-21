@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+from math import isnan
 
 from property_helpers import property_context, property_rng
 from src.analytics.overview_plot import (
@@ -10,6 +11,15 @@ from src.analytics.overview_plot import (
 
 
 SCENARIO_COUNT = 25
+
+
+def _assert_values_with_nan(actual, expected):
+    assert len(actual) == len(expected)
+    for actual_value, expected_value in zip(actual, expected):
+        if isinstance(expected_value, float) and isnan(expected_value):
+            assert isnan(actual_value)
+        else:
+            assert actual_value == pytest.approx(expected_value)
 
 
 def _users(rows):
@@ -393,6 +403,7 @@ def test_empty_transactions_return_empty_overview_data_and_formatted_figure():
     fig = create_overview_figure(data)
 
     assert data == {"overview_df": [], "ranks": [], "y": []}
+    assert len(fig.data) == 0
     assert fig.layout.xaxis.title.text is None
     assert fig.layout.yaxis.title.text == "amount"
     assert fig.layout.yaxis.dtick == 1
@@ -519,9 +530,10 @@ def test_create_overview_figure_applies_count_chart_formatting():
     assert fig.layout.xaxis.title.text is None
     assert fig.layout.yaxis.title.text == "amount"
     assert fig.layout.yaxis.dtick == 1
+    assert fig.layout.barmode == "relative"
 
 
-def test_create_overview_figure_uses_expected_product_traces():
+def test_create_overview_figure_uses_expected_product_traces_and_values():
     data = create_overview_data(
         _base_products(),
         _base_transactions(),
@@ -531,6 +543,35 @@ def test_create_overview_figure_uses_expected_product_traces():
     fig = create_overview_figure(data)
 
     assert [trace.name for trace in fig.data] == ["Beer", "Chips", "Soda"]
+    assert [list(trace.x) for trace in fig.data] == [
+        ["Blue team", "Red team"],
+        ["Blue team", "Red team"],
+        ["Blue team", "Red team"],
+    ]
+    _assert_values_with_nan(list(fig.data[0].y), [2, float("nan")])
+    _assert_values_with_nan(list(fig.data[1].y), [1, float("nan")])
+    _assert_values_with_nan(list(fig.data[2].y), [float("nan"), 1])
+
+
+def test_create_overview_figure_renders_average_mode_values():
+    data = create_overview_data(
+        _base_products(),
+        _base_transactions(),
+        _base_users(),
+        "products",
+        average=True,
+    )
+    fig = create_overview_figure(data)
+
+    assert [trace.name for trace in fig.data] == ["Beer", "Chips", "Soda"]
+    assert [list(trace.x) for trace in fig.data] == [
+        ["Drinks category", "Snacks category"],
+        ["Drinks category", "Snacks category"],
+        ["Drinks category", "Snacks category"],
+    ]
+    _assert_values_with_nan(list(fig.data[0].y), [0.1, float("nan")])
+    _assert_values_with_nan(list(fig.data[1].y), [float("nan"), 1 / 6])
+    _assert_values_with_nan(list(fig.data[2].y), [0.05, float("nan")])
 
 
 def test_overview_data_matches_reference_for_generated_scenarios():
