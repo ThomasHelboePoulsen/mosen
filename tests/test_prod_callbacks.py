@@ -80,6 +80,27 @@ class TestValidateBarcodeProduct:
         # Assert
         assert result is False
 
+    def test_validate_barcode_prod_rejects_changing_reserved_skin_barcode(
+        self, test_db
+    ):
+        upload_values(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode": 900,
+                        "name": "Deep Swamp",
+                        "price": 2,
+                        "category": "Skins",
+                        "current_stock": 0,
+                        "initial_stock": 0,
+                    }
+                ]
+            ),
+            "prods",
+        )
+
+        assert validate_barcode_prod(456, 900) is True
+
 
 class TestProdCallbacksAddRow:
 
@@ -88,7 +109,7 @@ class TestProdCallbacksAddRow:
         vals = [456, "Soda", 3.0, "Beverage", 30]
         
         # Act
-        result, edit_value = add_row(1, None, vals, None)
+        result, edit_value = add_row(1, vals, None)
         
         # Assert
         prods = get_prods()
@@ -107,7 +128,7 @@ class TestProdCallbacksAddRow:
         vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
-        result, edit_value = add_row(1, None, vals, 123)
+        result, edit_value = add_row(1, vals, 123)
         
         # Assert
         prods = get_prods()
@@ -137,7 +158,7 @@ class TestProdCallbacksAddRow:
         vals = [123, "Beer", 5.0, "Beverage", 30]
 
         # Act
-        add_row(1, None, vals, 123)
+        add_row(1, vals, 123)
 
         # Assert
         assert get_last_stock_update_at() == ""
@@ -163,7 +184,7 @@ class TestProdCallbacksAddRow:
         vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
-        result, edit_value = add_row(1, None, vals, None)
+        result, edit_value = add_row(1, vals, None)
         
         # Assert
         trans = get_trans()
@@ -174,10 +195,36 @@ class TestProdCallbacksAddRow:
         vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
-        result, edit_value = add_row(None, None, vals, None)
+        result, edit_value = add_row(None, vals, None)
         
         # Assert
         assert result is no_update
+
+    def test_reserved_skin_barcode_is_immutable_but_price_is_editable(
+        self, test_db
+    ):
+        upload_values(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode": 900,
+                        "name": "Deep Swamp",
+                        "price": 2,
+                        "category": "Skins",
+                        "current_stock": 0,
+                        "initial_stock": 0,
+                    }
+                ]
+            ),
+            "prods",
+        )
+
+        add_row(1, [900, "Deep Swamp", 3, "Skins", 0], 900)
+
+        assert float(get_prods().iloc[0]["price"]) == 3
+        with pytest.raises(ValueError, match="reserved barcode"):
+            add_row(1, [456, "Drink", 3, "Drinks", 0], 900)
+        assert list(get_prods()["barcode"]) == ["900"]
 
 
 class TestOpenProdModal:
@@ -236,6 +283,33 @@ class TestConfirmNewStock:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
+
+    @patch('src.tables.prod_callbacks.ctx')
+    def test_stock_confirmation_refreshes_table_without_resubmitting_product(
+        self, mock_ctx, test_db
+    ):
+        upload_values(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode": 123,
+                        "name": "Beer",
+                        "price": 5,
+                        "category": "Beverage",
+                        "current_stock": 10,
+                        "initial_stock": 20,
+                    }
+                ]
+            ),
+            "prods",
+        )
+        mock_ctx.triggered_id = "confirm_new_stock"
+
+        result = open_stock(None, 1, [7], [])
+
+        assert result[0] is False
+        assert result[1][0]["current_stock"] == "7"
+        assert len(get_prods()) == 1
 
     def test_confirm_new_stock_updates_current_stock(self, test_db):
         # Arrange

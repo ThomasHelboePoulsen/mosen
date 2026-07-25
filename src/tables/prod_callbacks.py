@@ -1,7 +1,7 @@
 import pandas as pd
 from datetime import datetime
-from dash import callback, Output, Input, State, html, ctx, ALL, MATCH, no_update
-from src.barcode import BarcodePartition, is_barcode
+from dash import callback, Output, Input, State, ctx, ALL, no_update
+from src.barcode import BarcodePartition, RESERVED_SKIN_BARCODES, is_barcode
 from src.database.data_connection import (
     get_prods,
     get_trans,
@@ -12,8 +12,39 @@ from src.analytics.waste_allocation import allocate_waste
 from src.container import Container
 from src.database.data_connection import Database
 from src.error_handler import callback_with_error_queue, Result
+from src.skins import skin_product_mask
 
 PRODUCT_FORM_COLUMNS = ["barcode", "name", "price", "category", "initial_stock"]
+
+
+def _next_product_barcode(table_data):
+    ordinary_barcodes = (
+        set(table_data["barcode"].astype(int)) - RESERVED_SKIN_BARCODES
+    )
+    barcode = max(ordinary_barcodes, default=100) + 1
+    while barcode in RESERVED_SKIN_BARCODES:
+        barcode += 1
+    if barcode > 999:
+        raise ValueError("No sequential product barcode remains.")
+    return barcode
+
+
+def _is_reserved_skin_barcode(value):
+    try:
+        return int(value) in RESERVED_SKIN_BARCODES
+    except (TypeError, ValueError):
+        return False
+
+
+def _changes_reserved_barcode(edit_barcode, new_barcode):
+    try:
+        barcode_changed = int(edit_barcode) != int(new_barcode)
+    except (TypeError, ValueError):
+        barcode_changed = str(edit_barcode) != str(new_barcode)
+    return barcode_changed and (
+        _is_reserved_skin_barcode(edit_barcode)
+        or _is_reserved_skin_barcode(new_barcode)
+    )
 
 
 @callback(
@@ -25,11 +56,8 @@ PRODUCT_FORM_COLUMNS = ["barcode", "name", "price", "category", "initial_stock"]
     prevent_initial_call=True,
 )
 def open_prod_modal(new_prod, confirm, cancel):
-    try:
-        table_data = Container.get(Database)._product_table.get()
-        barcode = max(table_data["barcode"]) + 1
-    except:
-        barcode = 101
+    table_data = Container.get(Database)._product_table.get()
+    barcode = _next_product_barcode(table_data)
     trigger = ctx.triggered_id
     if trigger == "new_prod_btn":
         return True, barcode
@@ -50,8 +78,8 @@ def enable_confirm(inps, invalid_barcode):
     return True
 
 
-def add_row(n_clicks, stock_trigger, vals, edit_barcode):
-    """add or edit a product. edit_barcode allows changing the barcode of a product, otherwise just upsert on barcode"""
+def add_row(n_clicks, vals, edit_barcode):
+    """Add a product or replace the row identified by ``edit_barcode``."""
     db = Container.get(Database)
     table = db._product_table
     
@@ -59,8 +87,18 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
         return no_update, no_update
     if n_clicks > 0:
         data = table.get()
-        
-        if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
+
+        editing_existing = db.barcode_exists(
+            edit_barcode, BarcodePartition.PRODUCT
+        )
+        if editing_existing and _changes_reserved_barcode(
+            edit_barcode, vals[0]
+        ):
+            raise ValueError(
+                "A checkout skin's reserved barcode cannot be changed."
+            )
+
+        if editing_existing:
             barcode_mask = data["barcode"] == int(edit_barcode)
             data = data[~barcode_mask].copy()
 
@@ -68,7 +106,7 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
             column: val for column, val in zip(PRODUCT_FORM_COLUMNS, vals)
         }
         existing_current_stock = None
-        if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
+        if editing_existing:
             existing = table.get()
             existing = existing[existing["barcode"] == int(edit_barcode)]
             existing_current_stock = int(existing.iloc[0]["current_stock"])
@@ -83,9 +121,11 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
         }
         
         data = pd.concat([data, pd.DataFrame([new_row])])
-        success, bad_rows = db.try_upload_values(data, "prods") 
+        success, bad_rows = db.try_upload_values(data, "prods")
         if not success:
-             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
+            raise ValueError(
+                f"Failed to upload product data. Bad rows: {bad_rows}"
+            )
 
     if is_barcode(edit_barcode, BarcodePartition.PRODUCT):
         trans = db.get_table("transactions").get()
@@ -94,7 +134,9 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
         )
         success, bad_rows = db.try_upload_values(trans, "transactions")
         if not success:
-             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
+            raise ValueError(
+                f"Failed to upload product data. Bad rows: {bad_rows}"
+            )
 
     return table.get().to_dict(orient="records"), None
 
@@ -104,14 +146,13 @@ def add_row(n_clicks, stock_trigger, vals, edit_barcode):
     Output("prod_table", "data"),
     Output("edit_input", "value", allow_duplicate=True),
     Input("confirm_prod", "n_clicks"),
-    Input("confirm_new_stock", "n_clicks"),
     State({"type": "prod_input", "index": ALL}, "value"),
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
 @db_transaction_raises
-def add_row_callback(n_clicks, stock_trigger, vals, edit_barcode):
-    return add_row(n_clicks, stock_trigger, vals, edit_barcode)
+def add_row_callback(n_clicks, vals, edit_barcode):
+    return add_row(n_clicks, vals, edit_barcode)
 
 
 @callback(
@@ -123,6 +164,9 @@ def add_row_callback(n_clicks, stock_trigger, vals, edit_barcode):
 def validate_barcode_prod(value, edit_barcode):
     bars = [row["barcode"] for row in get_prods().to_dict(orient="records")]
     bars.extend([row["barcode_prod"] for row in get_trans().to_dict(orient="records")])
+    editing_existing = is_barcode(edit_barcode, BarcodePartition.PRODUCT)
+    if editing_existing and _changes_reserved_barcode(edit_barcode, value):
+        return True
     if str(value) != str(edit_barcode) and (
         str(value) in set(bars)
         or value is None
@@ -133,8 +177,10 @@ def validate_barcode_prod(value, edit_barcode):
     return False
 
 
-@callback_with_error_queue(1,
+@callback_with_error_queue(
+    2,
     Output("new_stock_modal", "is_open"),
+    Output("prod_table", "data", allow_duplicate=True),
     Input("open_update_stock", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
     State({"type": "new_stock_inp", "index": ALL}, "value"),
@@ -142,24 +188,27 @@ def validate_barcode_prod(value, edit_barcode):
 def open_stock(trigger_open, trigger_close, inps):
     trigger = ctx.triggered_id
     if trigger == "open_update_stock" and trigger_open:
-        return True
+        return True, no_update
     if trigger == "confirm_new_stock" and trigger_close:
         try:
             confirm_new_stock(inps)
-            return False
+            return False, get_prods().to_dict(orient="records")
         except Exception as e:
-            #close on error, as clicking the button will do that anyway...
-            #can be fixed by changing update_settings_layout to triggero on succesful db changes instead of button presses.
-            return Result(False, error=e) 
-    return no_update
+            # The button closes the modal even when validation fails.
+            return Result((False, no_update), error=e)
+    return no_update, no_update
+
 
 @db_transaction_raises
 def confirm_new_stock(inps):
     db = Container.get(Database)
     prods = db.get_table("prods").get()
-    if None in inps or any(int(a) < 0 for a in inps): #While current stock can become negative, if someone scans too much, i don't think you would ever set it as negative.
+    if None in inps or any(int(value) < 0 for value in inps):
         raise ValueError("You cannot set a negative stock value or leave it empty.")
-    prods["current_stock"] = [int(val) for val in list(inps)]
+    stocked_mask = ~skin_product_mask(prods)
+    if len(inps) != int(stocked_mask.sum()):
+        raise ValueError("Stock values must be provided for every stocked product.")
+    prods.loc[stocked_mask, "current_stock"] = [int(val) for val in list(inps)]
     db.upload_values_raises(prods, "prods")
     allocate_waste(db)
     update_values(last_stock_update_at=datetime.now().isoformat(timespec="seconds"))

@@ -1,13 +1,19 @@
-import pandas as pd
 from src.database.tables.base_table import BaseTable
 from src.database.tables.column import Column, BarcodeColumn
 from src.barcode import BarcodePartition
+from src.skins import is_valid_skin_product
 
 
 class ProductTable(BaseTable):
     table_name = "prods"
     columns = [
-        BarcodeColumn("barcode", int, partition=BarcodePartition.PRODUCT, required=True, is_primary_key=True),
+        BarcodeColumn(
+            "barcode",
+            int,
+            partition=BarcodePartition.PRODUCT,
+            required=True,
+            is_primary_key=True,
+        ),
         Column("name", str, required=True),
         Column("price", float, required=True),
         Column("category", str, required=True),
@@ -25,3 +31,9 @@ class ProductTable(BaseTable):
             initial_stock varchar(255)
         )
     """
+
+    def is_valid_batch(self, row: dict, all_rows: list) -> bool:
+        if not super().is_valid_batch(row, all_rows):
+            return False
+
+        return is_valid_skin_product(row)

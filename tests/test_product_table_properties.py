@@ -1,6 +1,7 @@
 import pandas as pd
 
 from property_helpers import property_context, property_rng
+from src.barcode import RESERVED_SKIN_BARCODES
 from src.container import Container
 from src.database.data_connection import Database
 
@@ -9,7 +10,12 @@ SCENARIO_COUNT = 30
 
 
 def _product_rows(rng, count, barcode_start=100):
-    barcodes = rng.sample(range(barcode_start, 1000), count)
+    available_barcodes = [
+        barcode
+        for barcode in range(barcode_start, 1000)
+        if barcode not in RESERVED_SKIN_BARCODES
+    ]
+    barcodes = rng.sample(available_barcodes, count)
     rows = []
     for index, barcode in enumerate(barcodes):
         initial_stock = rng.randint(0, 50)

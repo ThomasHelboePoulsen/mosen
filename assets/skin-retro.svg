@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="terminal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#090603"/>
+      <stop offset="0.6" stop-color="#211305"/>
+      <stop offset="1" stop-color="#3d2307"/>
+    </linearGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0v44" fill="none" stroke="#ffb52e" stroke-width="2" opacity=".28"/>
+    </pattern>
+    <pattern id="scan" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="2" fill="#ffd36c" opacity=".06"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="700" fill="url(#terminal)"/>
+  <rect width="1200" height="700" fill="url(#grid)"/>
+  <rect width="1200" height="700" fill="url(#scan)"/>
+
+  <g fill="none" stroke="#ffc044">
+    <path d="M47 205V58h205M47 496v146h205M1153 205V58H948M1153 496v146H948" stroke-width="12" opacity=".82"/>
+    <path d="M82 98h98M82 130h154M964 571h154M1020 603h98" stroke-width="7" opacity=".72"/>
+    <path d="M0 245h103l31-31h135M1200 454h-103l-31 31H931" stroke-width="5" opacity=".52"/>
+    <circle cx="280" cy="214" r="8" fill="#ffc044" opacity=".75"/>
+    <circle cx="920" cy="485" r="8" fill="#ffc044" opacity=".75"/>
+  </g>
+
+  <g fill="#ffc044" opacity=".44">
+    <rect x="88" y="274" width="12" height="12"/>
+    <rect x="112" y="274" width="170" height="12"/>
+    <rect x="88" y="310" width="12" height="12"/>
+    <rect x="112" y="310" width="108" height="12"/>
+    <rect x="88" y="346" width="12" height="12"/>
+    <rect x="112" y="346" width="142" height="12"/>
+    <rect x="88" y="382" width="12" height="12"/>
+    <rect x="112" y="382" width="76" height="12"/>
+  </g>
+
+  <g transform="translate(930 215)" fill="#ffc044" opacity=".72">
+    <rect x="32" y="0" width="32" height="32"/>
+    <rect x="96" y="0" width="32" height="32"/>
+    <rect x="0" y="32" width="160" height="32"/>
+    <rect x="0" y="64" width="32" height="32"/>
+    <rect x="64" y="64" width="32" height="32"/>
+    <rect x="128" y="64" width="32" height="32"/>
+    <rect x="0" y="96" width="160" height="32"/>
+    <rect x="32" y="128" width="32" height="32"/>
+    <rect x="96" y="128" width="32" height="32"/>
+    <rect x="16" y="48" width="16" height="16" fill="#120b03"/>
+    <rect x="128" y="48" width="16" height="16" fill="#120b03"/>
+  </g>
+
+  <g fill="none" stroke="#ffdf8b" opacity=".54">
+    <rect x="878" y="184" width="264" height="224" stroke-width="6"/>
+    <path d="M878 425h264M916 454h188" stroke-width="6"/>
+  </g>
+
+  <g fill="#ffd467" opacity=".48">
+    <path d="M344 600h26v26h-26zM370 626h26v26h-26zM396 600h26v26h-26zM422 626h26v26h-26zM448 600h26v26h-26z"/>
+    <rect x="491" y="600" width="190" height="26"/>
+  </g>
+</svg>

@@ -1,9 +1,11 @@
 import types
 import pandas as pd
+import pytest
 from dash import no_update
 
 from src import trans_layout
 from src.database.data_connection import update_values
+from src.skins import checkout_theme_class
 
 
 def _load_balance_graph_data(temp_db):
@@ -72,8 +74,9 @@ def test_bad_barcode_open(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "Invalid barcode" in res[3][0]["msg"]
+    assert res[3] == checkout_theme_class(None)
+    assert isinstance(res[4], list)
+    assert "Invalid barcode" in res[4][0]["msg"]
 
 
 def test_bad_barcode_close(monkeypatch, temp_db):
@@ -91,8 +94,9 @@ def test_bad_barcode_close(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] is no_update
     assert res[2] == ""
-    assert isinstance(res[3], list)
-    assert "Invalid barcode" in res[3][0]["msg"]
+    assert res[3] is no_update
+    assert isinstance(res[4], list)
+    assert "Invalid barcode" in res[4][0]["msg"]
 
 
 def test_no_users_exists(monkeypatch, temp_db):
@@ -108,8 +112,9 @@ def test_no_users_exists(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "No users exist" in res[3][0]["msg"]
+    assert res[3] == checkout_theme_class(None)
+    assert isinstance(res[4], list)
+    assert "No users exist" in res[4][0]["msg"]
 
 
 def test_new_trans_inp_success(monkeypatch, temp_db):
@@ -134,7 +139,8 @@ def test_new_trans_inp_success(monkeypatch, temp_db):
     assert res[0] is True
     assert res[1] is no_update
     assert res[2] == ""
-    assert res[3] is no_update
+    assert res[3] == checkout_theme_class(None)
+    assert res[4] is no_update
     assert called["reset"] is True
 
 
@@ -168,6 +174,9 @@ def test_transaction_graph_hides_index_axis_labels(monkeypatch, temp_db):
     assert fig.layout.xaxis.showticklabels is False
     assert fig.layout.yaxis.title.text == "amount"
     assert fig.layout.yaxis.dtick == 1
+    assert fig.layout.paper_bgcolor == "#ffffff"
+    assert fig.layout.plot_bgcolor == "#ffffff"
+    assert fig.layout.legend.title.text is None
 
 
 def test_transaction_graph_counts_only_selected_user(monkeypatch, temp_db):
@@ -291,8 +300,9 @@ def test_paid_user_cannot_open_transaction_modal(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "already paid" in res[3][0]["msg"]
+    assert res[3] == checkout_theme_class(None)
+    assert isinstance(res[4], list)
+    assert "already paid" in res[4][0]["msg"]
 
 
 def test_prod_barcode_success(monkeypatch, temp_db):
@@ -309,11 +319,6 @@ def test_prod_barcode_success(monkeypatch, temp_db):
         {"barcode_prod": "101", "name": "P"}
     ], "temporary")
 
-    def fake_add(rows):
-        return "success", []
-
-    monkeypatch.setattr(trans_layout, "add_transactions", fake_add)
-
     # Act
     res = trans_layout.open_trans_modal(None, 1, "123", "123", [])
 
@@ -322,6 +327,47 @@ def test_prod_barcode_success(monkeypatch, temp_db):
     assert res[1] == ""
     assert res[2] is no_update
     assert res[3] is no_update
+    assert res[4] is no_update
+    assert len(temp_db._transaction_table.get()) == 1
+    assert temp_db._temporary_table.get().empty
+
+
+def test_duplicate_checkout_only_adds_basket_once(temp_db):
+    # Arrange
+    temp_db.upload_values([
+        {"barcode": "1234", "name": "U", "rank": "r", "team": "t", "is_guest": 0}
+    ], "users")
+    temp_db.upload_values([
+        {"barcode": "101", "name": "P", "price": 1.0, "category": "c", "current_stock": 10, "initial_stock": 10}
+    ], "prods")
+    temp_db.upload_values([
+        {"barcode_prod": "101", "name": "P"}
+    ], "temporary")
+
+    # Act
+    trans_layout.checkout_cart_to("1234", temp_db)
+    trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    transactions = temp_db._transaction_table.get()
+    assert len(transactions) == 1
+    assert transactions.iloc[0]["barcode_user"] == 1234
+    assert transactions.iloc[0]["barcode_prod"] == 101
+    assert temp_db._temporary_table.get().empty
+
+
+def test_empty_checkout_is_harmless(temp_db):
+    # Arrange
+    temp_db.upload_values([
+        {"barcode": "1234", "name": "U", "rank": "r", "team": "t", "is_guest": 0}
+    ], "users")
+
+    # Act
+    trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert temp_db._transaction_table.get().empty
+    assert temp_db._temporary_table.get().empty
 
 
 def test_empty_barcode_open(monkeypatch, temp_db):
@@ -339,8 +385,9 @@ def test_empty_barcode_open(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "Empty barcode" in res[3][0]["msg"]
+    assert res[3] == checkout_theme_class(None)
+    assert isinstance(res[4], list)
+    assert "Empty barcode" in res[4][0]["msg"]
 
 
 def test_add_transactions_failure(monkeypatch, temp_db):
@@ -357,10 +404,13 @@ def test_add_transactions_failure(monkeypatch, temp_db):
         {"barcode_prod": "101", "name": "P"}
     ], "temporary")
 
-    # Make add_transactions fail by monkeypatching the table append directly
+    # Make append report failure after writing, so the outer transaction must roll it back.
     original_append = temp_db._transaction_table.append
 
     def fake_append(df):
+        result, bad_rows = original_append(df)
+        assert result == "success"
+        assert bad_rows == []
         return "failed", [{"row": 1}]
 
     monkeypatch.setattr(temp_db._transaction_table, "append", fake_append)
@@ -372,8 +422,41 @@ def test_add_transactions_failure(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] is no_update
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "Failed to add transactions" in res[3][0]["msg"]
+    assert res[3] is no_update
+    assert isinstance(res[4], list)
+    assert "Failed to add transactions" in res[4][0]["msg"]
+    assert temp_db._transaction_table.get().empty
+    current = temp_db._temporary_table.get()
+    assert len(current) == 1
+    assert current.iloc[0]["barcode_prod"] == 101
+
+
+def test_clear_failure_rolls_back_appended_transactions(monkeypatch, temp_db):
+    # Arrange
+    temp_db.upload_values([
+        {"barcode": "1234", "name": "U", "rank": "r", "team": "t", "is_guest": 0}
+    ], "users")
+    temp_db.upload_values([
+        {"barcode": "101", "name": "P", "price": 1.0, "category": "c", "current_stock": 10, "initial_stock": 10}
+    ], "prods")
+    temp_db.upload_values([
+        {"barcode_prod": "101", "name": "P"}
+    ], "temporary")
+
+    def fail_clear(_rows):
+        raise RuntimeError("clear failed")
+
+    monkeypatch.setattr(temp_db._temporary_table, "set", fail_clear)
+
+    # Act
+    with pytest.raises(RuntimeError, match="clear failed"):
+        trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert temp_db._transaction_table.get().empty
+    current = temp_db._temporary_table.get()
+    assert len(current) == 1
+    assert current.iloc[0]["barcode_prod"] == 101
 
 
 def test_unexpected_error_branch(monkeypatch, temp_db):
@@ -392,3 +475,4 @@ def test_unexpected_error_branch(monkeypatch, temp_db):
     assert res[1] is no_update
     assert res[2] is no_update
     assert res[3] is no_update
+    assert res[4] is no_update

@@ -16,6 +16,11 @@ class BarcodePartition(Enum):
     USER = ("user", 1000, 99999999999)
 
 
+# Reserved subrange inside BarcodePartition.PRODUCT. These remain product
+# barcodes so product and transaction columns continue to accept them.
+RESERVED_SKIN_BARCODES = frozenset({900, 901, 902, 903})
+
+
 def get_barcode(barcode, partition: BarcodePartition) -> int:
     """Parse a barcode and validate that it falls inside a named partition."""
     if barcode is None or barcode == "":

@@ -3,9 +3,9 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from src.components import get_barcode, get_table
-from src.error_handler import append_error, callback_with_error_queue,Result
-from src.barcode import BarcodePartition, get_barcode as get_valid_barcode
+from src.components import get_barcode
+from src.error_handler import callback_with_error_queue,Result
+from src.barcode import BarcodePartition
 from src.container import Container
 from src.database.data_connection import (
     Database,
@@ -16,13 +16,32 @@ from src.database.data_connection import (
     get_users,
     get_current_trans,
     update_current_trans,
-    add_transactions,
     reset_current_trans,
     get_show_bill,
     get_waste_cents,
 )
 from src.analytics.bill_preview import get_preview_user_waste_cents
 from src.analytics.bar_chart_format import format_count_bar_chart
+from src.skins import (
+    checkout_theme_class,
+    get_skin_by_barcode,
+    get_user_skin_key,
+)
+
+
+def _format_checkout_history_chart(fig):
+    """Keep the purchase history readable without hiding the active skin."""
+
+    fig = format_count_bar_chart(fig, show_x_tick_labels=False)
+    fig.update_layout(
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        legend_title_text=None,
+        font_color="#172117",
+    )
+    fig.update_xaxes(gridcolor="rgba(23, 33, 23, 0.16)")
+    fig.update_yaxes(gridcolor="rgba(23, 33, 23, 0.16)")
+    return fig
 
 
 def trans_modal():
@@ -84,6 +103,7 @@ def trans_modal():
         id="new_trans_modal",
         fullscreen=True,
         keyboard=False,
+        className=checkout_theme_class(None),
     )
     return modal
 
@@ -104,7 +124,7 @@ def get_transactions(trigger, barcode):
     transactions = get_trans()
     user_trans = transactions[transactions["barcode_user"] == str(barcode)].copy()
     if len(user_trans) == 0:
-        return format_count_bar_chart(px.bar([{}]), show_x_tick_labels=False)
+        return _format_checkout_history_chart(px.bar([{}]))
 
     prods = get_prods()
     prod_names = {str(p["barcode"]): p["name"] for _, p in prods.iterrows()}
@@ -113,13 +133,14 @@ def get_transactions(trigger, barcode):
     )
     user_trans = user_trans[user_trans["name"].notna()]
     trans_data = [user_trans["name"].value_counts().to_dict()]
-    return format_count_bar_chart(px.bar(trans_data), show_x_tick_labels=False)
+    return _format_checkout_history_chart(px.bar(trans_data))
 
 
-@callback_with_error_queue(3,
+@callback_with_error_queue(4,
     Output("new_trans_modal", "is_open"),
     Output("new_trans_inp", "value"),
     Output("prod_barcode", "value", allow_duplicate=True),
+    Output("new_trans_modal", "className"),
     Input("new_trans_inp", "n_submit"),
     Input("prod_barcode", "n_submit"),
     State("new_trans_inp", "value"),
@@ -127,8 +148,13 @@ def get_transactions(trigger, barcode):
 )
 def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
     db = Container.get(Database)
-    clear_barcode_open = (no_update, "", no_update)
-    clear_barcode_close = (no_update, no_update, "")
+    clear_barcode_open = (
+        no_update,
+        "",
+        no_update,
+        checkout_theme_class(None),
+    )
+    clear_barcode_close = (no_update, no_update, "", no_update)
     barcode_open = get_barcode(barcode_open)
     if barcode_open == "bad barcode":
         return Result(clear_barcode_open, ValueError("Invalid barcode"))
@@ -149,14 +175,18 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
             if int(user.get("paid_cents", 0)) > 0:
                 return Result(clear_barcode_open, ValueError("User has already paid"))
             reset_current_trans()
-            return True, no_update, ""
+            skin_key = get_user_skin_key(
+                user["barcode"],
+                db._transaction_table.get(),
+            )
+            return True, no_update, "", checkout_theme_class(skin_key)
         return clear_barcode_open #I couldn't provoke this branch when testing
     
     elif trigger == "prod_barcode" and strings_map_to_same_number(barcode_close,barcode_open):
         checkout_cart_to(barcode_close, db)
-        return False, "", no_update
+        return False, "", no_update, no_update
 
-    return no_update, no_update, no_update
+    return no_update, no_update, no_update, no_update
 
 @db_transaction_raises
 def checkout_cart_to(user_barcode, db:Database):
@@ -167,6 +197,9 @@ def checkout_cart_to(user_barcode, db:Database):
     if len(user) and int(user.iloc[0].get("paid_cents", 0)) > 0:
         raise ValueError(f"User has already paid: {user_barcode}")
     current = db._temporary_table.get()
+    if current.empty:
+        return
+
     new_rows = pd.DataFrame(
         [
             {
@@ -180,6 +213,8 @@ def checkout_cart_to(user_barcode, db:Database):
     add_result, bad_rows = db._transaction_table.append(new_rows)
     if not add_result == "success":
         raise ValueError(f"Failed to add transactions due to the following bad rows: {bad_rows}")
+
+    db._temporary_table.set([])
 
 
 def strings_map_to_same_number(s1,s2):
@@ -213,6 +248,8 @@ def new_trans(trigger, _barcode, user_barcode):
         if len(current) == 0:
             raise ValueError("You can't use a multiplier without choosing product")
         last_barcode = current.iloc[len(current) - 1]["barcode_prod"]
+        if get_skin_by_barcode(last_barcode) is not None:
+            raise ValueError("Skins cannot be multiplied")
         current_amount = len(current[current["barcode_prod"] == str(last_barcode)])
         addition = int(barcode) if current_amount > 1 else int(barcode) - 1
         for _ in range(addition):
@@ -221,16 +258,19 @@ def new_trans(trigger, _barcode, user_barcode):
                 {col: last.values[i] for i, col in enumerate(list(current.columns))}
             ]
             current = pd.concat([current, pd.DataFrame(data)], ignore_index=True)
-    elif str(int(barcode)) not in list(prods["barcode"]):
+    elif barcode not in list(prods["barcode"].astype(str)):
         not_found = "Product" if int(barcode) < 1000 else "User"
         raise ValueError(f"{not_found} not found: {barcode}")
     else:
-        try:
-            product = prods[prods["barcode"] == str(barcode)]
-        except:
-            raise ValueError(f"Product not found: {barcode}")
-        name = str(product["name"].values[0])
-        new_transaction = pd.DataFrame([{"barcode_prod": barcode, "name": name}])
+        product = prods[prods["barcode"].astype(str) == barcode].iloc[0]
+        name = str(product["name"])
+        if get_skin_by_barcode(barcode) is not None:
+            current = current[
+                current["barcode_prod"].map(get_skin_by_barcode).isna()
+            ].copy()
+        new_transaction = pd.DataFrame(
+            [{"barcode_prod": barcode, "name": name}]
+        )
         current = pd.concat([current, new_transaction], ignore_index=True)
 
     display_text = [html.H1("Products: ")]

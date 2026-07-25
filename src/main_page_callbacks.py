@@ -3,24 +3,23 @@ import pandas as pd
 import plotly.express as px
 from src.database.data_connection import (
     TransactionResult,
-    db_transaction_raises,
     db_transaction_result,
     get_prods,
     get_trans,
     get_users,
-    upload_values,
     update_values,
     reset_all_tables,
-    get_waste,
     get_last_stock_update_at,
 )
 from src.analytics.trans_calculations import get_income
 from src.analytics.timestamps import parse_timestamp, parse_transaction_timestamps
 from src.analytics.waste_allocation import allocate_waste
 from src.barcode_generator import generate_pdf
-from src.error_handler import append_error, callback_with_error_queue
+from src.error_handler import callback_with_error_queue
 from src.container import Container
 from src.database.data_connection import Database
+from src.database.import_validation import validate_import
+from src.skins import get_starter_skin_products, without_skin_products
 from src.analytics.overview_plot import create_overview
 from src.analytics.bar_chart_format import format_count_bar_chart
 
@@ -35,6 +34,12 @@ from datetime import datetime
 
 
 BACKUP_DIR = "swamp_backups"
+
+
+def get_starter_product_template():
+    """Return the importable offline bootstrap catalog shipped with the app."""
+
+    return pd.DataFrame(get_starter_skin_products())
 
 
 def create_database_backup(data_file="beerbase.db", label="backup", backup_dir=None):
@@ -75,7 +80,15 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     Input("bill_preview_waste_extra_percent", "value"),
     State("settings_password", "value"),
 )
-@db_transaction_result
+@db_transaction_result(
+    fallback_values=(
+        no_update,
+        no_update,
+        no_update,
+        [no_update, no_update, no_update],
+        no_update,
+    )
+)
 def update_settings(
     pass_trigger,
     show_bill,
@@ -93,20 +106,38 @@ def update_settings(
         password = "OLProgram"
 
     db = Container.get(Database)
-    imports = []
+    import_data = None
     import_triggered = isinstance(trigger, dict) and trigger.get("type") == "database_upload"
     if import_triggered:
-        for i, table in enumerate(db_tables):
-            if table is None:
+        triggered_table_name = trigger.get("index")
+        for i, (table, table_id) in enumerate(zip(db_tables, table_ids)):
+            if (
+                not isinstance(table_id, dict)
+                or table_id.get("index") != triggered_table_name
+                or table is None
+            ):
                 continue
             _, content_string = table.split(",")
             content = base64.b64decode(content_string)
             df = pd.read_csv(io.StringIO(content.decode("utf-8")))
-            if len(df) > 0:
-                imports.append((i, df, table_ids[i]["index"]))
+            # A header-only upload is a deliberate empty replacement.
+            # Reference validation still prevents clearing rows used by transactions.
+            import_data = (i, triggered_table_name, df)
+            break
 
-    if imports:
+    if import_data is not None:
         create_database_backup(db.data_file, label="pre_import")
+
+    bad_rows_list = [[], [], []]
+    if import_data is not None:
+        position, table_name, df = import_data
+        bad_rows = validate_import(db, table_name, df)
+        if bad_rows:
+            bad_rows_list[position] = bad_rows
+            return TransactionResult(
+                (True, open_warning_password, True, bad_rows_list, False),
+                commit=False,
+            )
 
     update_values(
         password,
@@ -117,11 +148,11 @@ def update_settings(
     if trigger == "confirm_new_password":
         return None, no_update, no_update, [no_update] * 3, True
 
-    bad_rows_list = [[], [], []]
     open_warning_data = False
-    for i, df, table_name in imports:
+    if import_data is not None:
+        position, table_name, df = import_data
         success, bad_rows = db.try_upload_values(df, table_name)
-        bad_rows_list[i] = bad_rows
+        bad_rows_list[position] = bad_rows
         if not success:
             open_warning_data = True
     return TransactionResult((True, open_warning_password, open_warning_data, bad_rows_list, False), commit=not open_warning_data)
@@ -154,6 +185,21 @@ def download_tables(trigger):
     trigger = trigger["index"]
     data = data_translation[trigger]().to_csv
     return dcc.send_data_frame(data, filename=f"{trigger}_data.csv", index=False)
+
+
+@callback(
+    Output("product_template_download", "data"),
+    Input("download_product_template_btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def download_product_template(trigger):
+    if not trigger:
+        return no_update
+    return dcc.send_data_frame(
+        get_starter_product_template().to_csv,
+        filename="product_template.csv",
+        index=False,
+    )
 
 
 @callback_with_error_queue(2,
@@ -226,6 +272,14 @@ def _validate_payment_export_stock_freshness():
     if len(transactions) == 0:
         return PaymentExportWarning()
 
+    products = get_prods()
+    stocked_barcodes = set(without_skin_products(products)["barcode"].astype(str))
+    transactions = transactions[
+        transactions["barcode_prod"].astype(str).isin(stocked_barcodes)
+    ]
+    if len(transactions) == 0:
+        return PaymentExportWarning()
+
     parsed, failures = parse_transaction_timestamps(transactions["timestamp"])
     if parsed and max(parsed) > last_stock_update:
         return PaymentExportWarning(
@@ -249,28 +303,20 @@ def export_barcodes(trigger):
     if trigger is None:
         return no_update
 
-    types = ["users", "prods", "multipliers"]
-    temp_files = []
-    
-    for type in types:
-        pdf_filename = f"{type[:-1]}_barcodes.pdf"
-        generate_pdf(
-            type=type,
-            pdf_filename=pdf_filename,
-        )
-        temp_files.append(pdf_filename)
-    
     zip_buffer = io.BytesIO()
     zip_filename = f"barcodes_{datetime.now().strftime('%d_%m_%Y_%H_%M_%S')}.zip"
 
-    with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-        for pdf in temp_files:
-            with open(pdf, 'rb') as f:
-                zipf.writestr(pdf, f.read())
-    
-    for pdf in temp_files:
-        if os.path.exists(pdf):
-            os.remove(pdf)
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+        for barcode_type in ["users", "prods", "multipliers"]:
+            pdf_buffer = io.BytesIO()
+            generate_pdf(
+                type=barcode_type,
+                pdf_filename=pdf_buffer,
+            )
+            zipf.writestr(
+                f"{barcode_type[:-1]}_barcodes.pdf",
+                pdf_buffer.getvalue(),
+            )
 
     zip_buffer.seek(0)
     return dcc.send_bytes(zip_buffer.getvalue(), filename=zip_filename)
@@ -283,14 +329,13 @@ def export_barcodes(trigger):
     State({"index": ALL, "type": "bad_rows"}, "data"),
 )
 def open_bad_rows(trigger, data):
-    if (
-        trigger is None
-        or max([0 if table is None else len(table) for table in data]) == 0
-    ):
+    if trigger is None:
         return no_update, [no_update, no_update, no_update]
-    else:
-        print(data)
-        return True, data
+
+    data = data or [None, None, None]
+    if not any(table for table in data if isinstance(table, list)):
+        return False, [[], [], []]
+    return True, data
 
 
 @callback(

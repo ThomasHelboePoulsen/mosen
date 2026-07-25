@@ -132,6 +132,19 @@ def product_settings_layout():
                                     ),
                                     html.Hr(),
                                     dbc.Button(
+                                        "Download starter template",
+                                        id="download_product_template_btn",
+                                    ),
+                                    dcc.Download(id="product_template_download"),
+                                    html.P(
+                                        "The fixed skin rows control which skins are offered. "
+                                        "Remove unwanted rows before the first import; "
+                                        "keep purchased rows for accounting history. "
+                                        "Barcode 903 is the free reset to the default look.",
+                                        className="small mt-2",
+                                    ),
+                                    html.Hr(),
+                                    dbc.Button(
                                         "Edit products",
                                         id="edit_prods",
                                     ),
@@ -257,32 +270,59 @@ def transaction_settings_layout():
     return layout
 
 
+def _database_upload_row(table_name, label):
+    return dbc.Row(
+        [
+            dbc.Col(html.P(label, className="mb-0"), width=4),
+            dbc.Col(get_upload(table_name), width=4),
+            dbc.Col(
+                html.P(
+                    id={"index": table_name, "type": "show_upload_file"},
+                    className="mb-0",
+                ),
+                width=4,
+            ),
+        ],
+        align="center",
+        className="mb-2",
+    )
+
+
 def settings_settings_layout():
     layout = dbc.Container(
         [
             html.Div(
                 dbc.Row(
                     [
-                        html.Br(),
                         dbc.Col(
-                            dbc.Row(
+                            html.Div(
                                 [
-                                    dbc.Col(html.P("Upload user database: "), width=4),
-                                    dbc.Col(get_upload("users")),
-                                    dbc.Col(
-                                        html.P(
-                                            id={
-                                                "index": "users",
-                                                "type": "show_upload_file",
-                                            }
-                                        ),
-                                        width=4,
+                                    html.H5("Database import / export", className="mb-1"),
+                                    html.P(
+                                        "For later user or product changes, download "
+                                        "the current table from its tab, edit that "
+                                        "complete export, then upload it here. "
+                                        "Incomplete replacement files are rejected. "
+                                        "Uploads apply one table at a time; remove "
+                                        "transaction rows before deleting products or users.",
+                                        className="small text-muted mb-3",
                                     ),
-                                ]
+                                    _database_upload_row(
+                                        "users", "Upload user database:"
+                                    ),
+                                    _database_upload_row(
+                                        "prods", "Upload product database:"
+                                    ),
+                                    _database_upload_row(
+                                        "transactions",
+                                        "Upload transaction database (not recommended):",
+                                    ),
+                                ],
+                                id="database_transfer_section",
+                                className="border rounded p-3 mb-2",
                             ),
                             width=12,
                         ),
-                        html.Hr(),
                         dbc.Col(
                             dbc.Row(
                                 [
@@ -293,51 +333,6 @@ def settings_settings_layout():
                                             value=get_waste_strategy(),
                                             clearable=False,
                                             id="waste_strategy",
-                                        ),
-                                        width=4,
-                                    ),
-                                ]
-                            ),
-                            width=12,
-                        ),
-                        html.Hr(),
-                        dbc.Col(
-                            dbc.Row(
-                                [
-                                    dbc.Col(
-                                        html.P("Upload product database: "), width=4
-                                    ),
-                                    dbc.Col(get_upload("prods")),
-                                    dbc.Col(
-                                        html.P(
-                                            id={
-                                                "index": "prods",
-                                                "type": "show_upload_file",
-                                            }
-                                        ),
-                                        width=4,
-                                    ),
-                                ]
-                            ),
-                            width=12,
-                        ),
-                        html.Hr(),
-                        dbc.Col(
-                            dbc.Row(
-                                [
-                                    dbc.Col(
-                                        html.P(
-                                            "Upload transaction database \n(not recommended): "
-                                        ),
-                                        width=4,
-                                    ),
-                                    dbc.Col(get_upload("transactions")),
-                                    dbc.Col(
-                                        html.P(
-                                            id={
-                                                "index": "transactions",
-                                                "type": "show_upload_file",
-                                            }
                                         ),
                                         width=4,
                                     ),

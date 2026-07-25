@@ -17,6 +17,7 @@ from src.database.data_connection import (
     get_users,
     update_values,
 )
+from src.skins import checkout_theme_class
 
 #Testing that key workflows are respondant under large loads.
 #We test callback time, not render, transport or other parts.
@@ -491,7 +492,7 @@ def test_scan_user_barcode_opens_basket_workflow_under_limit(scan_db, monkeypatc
     )
     assert errors == {}
     assert results["open_modal"][0] is True
-    assert results["open_modal"][3] is no_update
+    assert results["open_modal"][3] == checkout_theme_class(None)
     assert results["transaction_graph"][1] is no_update
     assert "Current bill" in results["bill_preview"]
     assert len(scan_db._temporary_table.get()) == 0
@@ -537,6 +538,7 @@ def test_scan_product_barcode_workflow_adds_to_basket_under_limit(
     assert results["add_product"][1] == ""
     assert results["add_product"][2] is no_update
     assert results["close_guard"] == (
+        no_update,
         no_update,
         no_update,
         no_update,
@@ -733,7 +735,8 @@ def test_rapid_product_scans_drain_under_burst_limit(scan_db, monkeypatch):
     assert len(results) == BURST_SCAN_COUNT
     assert all(result["add_product"][2] is no_update for result in results)
     assert all(
-        result["close_guard"] == (no_update, no_update, no_update, no_update)
+        result["close_guard"]
+        == (no_update, no_update, no_update, no_update, no_update)
         for result in results
     )
     assert len(scan_db._temporary_table.get()) == BURST_SCAN_COUNT

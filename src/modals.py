@@ -2,6 +2,10 @@ from dash import html, dcc, dash_table
 import dash_bootstrap_components as dbc
 import pandas as pd
 from src.database.data_connection import get_prods, get_trans, get_users
+from src.database.tables.product import ProductTable
+from src.database.tables.transaction import TransactionTable
+from src.database.tables.user import UserTable
+from src.skins import without_skin_products
 from src.components import get_table
 
 USER_COLS = ["rank", "team"]
@@ -131,7 +135,7 @@ def new_prod_modal():
 
 
 def update_stock_modal():
-    prods = get_prods()
+    prods = without_skin_products(get_prods())
     prods = prods.to_dict(orient="records")
     new_stock_inps = [
         dbc.Row(
@@ -282,6 +286,11 @@ def export_payments_modal():
 
 def bad_rows_mdl():
     tables = ["users", "prods", "transactions"]
+    table_columns = {
+        "users": [column.name for column in UserTable.columns],
+        "prods": [column.name for column in ProductTable.columns],
+        "transactions": [column.name for column in TransactionTable.columns],
+    }
     table_defs = [
         html.P(
             "Upload aborted. The following bad rows were detected in your upload. You can edit them manually, and reupload"
@@ -295,7 +304,15 @@ def bad_rows_mdl():
                 html.Br(),
                 dash_table.DataTable(
                     id={"index": table, "type": "bad_rows_table"},
+                    columns=[
+                        {
+                            "name": column.replace("_", " ").title(),
+                            "id": column,
+                        }
+                        for column in ["error", *table_columns[table]]
+                    ],
                     style_cell={"color": "black"},
+                    style_table={"overflowX": "auto"},
                 ),
             ]
         )

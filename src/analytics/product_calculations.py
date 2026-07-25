@@ -1,7 +1,9 @@
 from src.database.data_connection import get_prods, get_trans
+from src.skins import skin_product_mask, without_skin_products
 
 
 def _waste_rows(prods, transactions):
+    prods = without_skin_products(prods)
     sold_counts = (
         transactions["barcode_prod"].astype(str).value_counts().to_dict()
         if len(transactions)
@@ -43,7 +45,18 @@ def calculate_category_waste_cents(prods, transactions) -> dict[str, int]:
 def calculate_waste_cents(prods=None, transactions=None):
     prods = get_prods() if prods is None else prods
     transactions = get_trans() if transactions is None else transactions
-    return max(0, sum(row["_total_cents"] for row in _waste_rows(prods, transactions)))
+    skin_prices = {
+        str(product["barcode"]): int(round(float(product["price"]) * 100))
+        for _, product in prods[skin_product_mask(prods)].iterrows()
+    }
+    skin_revenue_cents = sum(
+        skin_prices.get(str(barcode), 0)
+        for barcode in transactions["barcode_prod"]
+    )
+    physical_waste_cents = sum(
+        row["_total_cents"] for row in _waste_rows(prods, transactions)
+    )
+    return max(0, physical_waste_cents - skin_revenue_cents)
 
 
 def calculate_waste():
