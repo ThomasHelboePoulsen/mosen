@@ -1,4 +1,5 @@
-from math import floor, isfinite, log10
+from collections import defaultdict
+from math import floor, isclose, isfinite, log10
 
 
 def format_count_bar_chart(fig, show_x_tick_labels=True):
@@ -9,17 +10,43 @@ def format_count_bar_chart(fig, show_x_tick_labels=True):
 
 
 def count_bar_chart_dtick(fig):
-    max_value = max(_finite_y_values(fig), default=0)
-
-    if max_value < 1:
-        if max_value <= 0:
-            return 1
-        return 0.1 if max_value <= 0.5 else 0.2
-
-    if max_value < 15:
+    values = list(_finite_y_values(fig))
+    max_value = _max_visible_magnitude(fig)
+    if max_value <= 0:
         return 1
 
-    return _nice_tick(max_value / 10)
+    tick = _nice_tick(max_value / 10)
+    if all(isclose(value, round(value)) for value in values):
+        return max(1, tick)
+    return tick
+
+
+def _max_visible_magnitude(fig):
+    if fig.layout.barmode not in {"relative", "stack"}:
+        return max((abs(value) for value in _finite_y_values(fig)), default=0)
+
+    totals = defaultdict(float)
+    for trace in fig.data:
+        if trace.y is None or trace.visible in {False, "legendonly"}:
+            continue
+
+        x_values = trace.x
+        for index, value in enumerate(trace.y):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not isfinite(number):
+                continue
+
+            x_value = x_values[index] if x_values is not None else index
+            key = str(x_value)
+            totals[key] += number
+
+    return max(
+        totals.values(),
+        default=0,
+    )
 
 
 def _finite_y_values(fig):

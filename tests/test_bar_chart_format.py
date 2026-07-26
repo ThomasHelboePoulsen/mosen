@@ -19,14 +19,14 @@ def test_count_bar_chart_uses_integer_ticks_for_empty_chart():
 
 
 def test_count_bar_chart_uses_small_decimal_ticks_for_average_values():
-    assert _formatted_chart_with_values([0.4]).layout.yaxis.dtick == 0.1
-    assert _formatted_chart_with_values([0.9]).layout.yaxis.dtick == 0.2
+    assert _formatted_chart_with_values([0.4]).layout.yaxis.dtick == 0.05
+    assert _formatted_chart_with_values([0.9]).layout.yaxis.dtick == 0.1
 
 
 def test_count_bar_chart_uses_integer_ticks_for_small_counts():
     fig = _formatted_chart_with_values([1, 7, 14])
 
-    assert fig.layout.yaxis.dtick == 1
+    assert fig.layout.yaxis.dtick == 2
 
 
 def test_count_bar_chart_scales_ticks_for_larger_counts():
@@ -46,3 +46,30 @@ def test_count_bar_chart_handles_array_y_values():
     fig = _formatted_chart_with_values(np.array([20, 30]))
 
     assert fig.layout.yaxis.dtick == 5
+
+
+def test_count_bar_chart_uses_stacked_total_to_scale_ticks():
+    fig = go.Figure()
+    for value in [10, 4, 6, 6, 3]:
+        fig.add_bar(x=["KABS team"], y=[value])
+    fig.update_layout(barmode="relative")
+
+    format_count_bar_chart(fig)
+
+    assert fig.layout.yaxis.dtick == 5
+
+
+def test_count_bar_chart_scales_tiny_decimal_ranges():
+    assert _formatted_chart_with_values([0.03]).layout.yaxis.dtick == 0.005
+    assert _formatted_chart_with_values([0.004]).layout.yaxis.dtick == 0.0005
+
+
+def test_count_bar_chart_scales_decimal_stacks():
+    fig = go.Figure()
+    fig.add_bar(x=["A"], y=[0.12])
+    fig.add_bar(x=["A"], y=[0.18])
+    fig.update_layout(barmode="relative")
+
+    format_count_bar_chart(fig)
+
+    assert fig.layout.yaxis.dtick == 0.05
