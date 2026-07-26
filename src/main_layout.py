@@ -22,6 +22,7 @@ from src.modals import (
     update_stock_modal,
     password_modal,
     export_payments_modal,
+    remove_transaction_modal,
     bad_rows_mdl,
     edit_modal,
     reset_modal,
@@ -225,6 +226,14 @@ def transaction_settings_layout():
                                         "Study Users",
                                         id="study_users_btn",
                                     ),
+                                    html.Hr(),
+                                    dbc.Button(
+                                        "Remove selected transaction",
+                                        id="remove_transaction_btn",
+                                        color="danger",
+                                        outline=True,
+                                        disabled=True,
+                                    ),
                                 ]
                             ),
                             width=3,
@@ -236,6 +245,7 @@ def transaction_settings_layout():
                                         "trans_table",
                                         get_trans().to_dict(orient="records"),
                                         200,
+                                        row_selectable="single",
                                     ),
                                     html.Hr(),
                                     get_table("income_table", get_income(), 200),
@@ -249,8 +259,10 @@ def transaction_settings_layout():
             ),
             dcc.Store(id="placeholder_for_empty_output"),
             export_payments_modal(),
+            remove_transaction_modal(),
             study_users_modal(),
             dcc.Download(id="payments_download"),
+            dcc.Store(id="pending_transaction_removal"),
             dcc.Store(id={"index": "transactions", "type": "bad_rows"}),
         ],
     )
@@ -735,6 +747,7 @@ def layout_func():
             edit_modal(),
             top_user_chart_modal(),
             dcc.Store(id="update_settings"),
+            dcc.Store(id="transaction_removal_revision"),
             dcc.Store(id="retain_focus_main", data=None),
             dcc.Store(id="retain_focus_prod", data=None),
             dcc.Interval(
@@ -858,6 +871,7 @@ def toggle_checkboxes(n_clicks, current_values):
     Input("delete_data_btn", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
     Input("confirm_payments", "n_clicks"),
+    Input("transaction_removal_revision", "data"),
 )
 def update_settings_layout(
     trigger,
@@ -867,6 +881,7 @@ def update_settings_layout(
     reset_trigger,
     stock_trigger,
     payments_trigger,
+    transaction_removal_revision=None,
 ):
     #Currently works by guessing that any db changes are done 1 sec after a callback possibly changing anything
     #Ideally this is moved to only trigger after a callback sucessfully changes db.
@@ -878,6 +893,7 @@ def update_settings_layout(
             reset_trigger,
             stock_trigger,
             payments_trigger,
+            transaction_removal_revision,
             settings_open,
         ]
     ):

@@ -280,6 +280,34 @@ def export_payments_modal():
     return mdl
 
 
+def remove_transaction_modal():
+    return dbc.Modal(
+        [
+            dbc.ModalHeader("Remove transaction?"),
+            dbc.ModalBody(id="remove_transaction_summary"),
+            dbc.ModalFooter(
+                html.Div(
+                    [
+                        dbc.Button(
+                            "Remove transaction",
+                            id="confirm_remove_transaction",
+                            color="danger",
+                        ),
+                        dbc.Button(
+                            "Cancel",
+                            id="cancel_remove_transaction",
+                            className="ms-2",
+                        ),
+                    ],
+                    className="d-flex justify-content-end w-100",
+                )
+            ),
+        ],
+        id="remove_transaction_modal",
+        is_open=False,
+    )
+
+
 def bad_rows_mdl():
     tables = ["users", "prods", "transactions"]
     table_defs = [

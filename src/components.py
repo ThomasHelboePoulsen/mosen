@@ -22,12 +22,13 @@ def get_upload(id: str):
     )
 
 
-def get_table(id, data, height):
+def get_table(id, data, height, row_selectable=None):
     return dash_table.DataTable(
         id=id,
         data=data,
         columns=_get_columns(data),
         row_deletable=False,
+        row_selectable=row_selectable,
         fixed_rows={"headers": True},
         style_table={
             "height": f"{str(height)}px",

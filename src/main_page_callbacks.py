@@ -35,6 +35,7 @@ from datetime import datetime
 
 
 BACKUP_DIR = "swamp_backups"
+TRANSACTION_COLUMNS = ("barcode_user", "barcode_prod", "timestamp")
 
 
 def create_database_backup(data_file="beerbase.db", label="backup", backup_dir=None):
@@ -46,6 +47,127 @@ def create_database_backup(data_file="beerbase.db", label="backup", backup_dir=N
     filename = os.path.join(backup_dir, f"{db_name}_{label}_{timestamp}.db")
     shutil.copy(data_file, filename)
     return filename
+
+
+def get_selected_transaction(virtual_data, selected_rows):
+    if not selected_rows:
+        raise ValueError("Select a transaction to remove.")
+    if not virtual_data:
+        raise ValueError("The selected transaction is no longer available.")
+
+    selected_index = selected_rows[0]
+    if selected_index < 0 or selected_index >= len(virtual_data):
+        raise ValueError("The selected transaction is no longer available.")
+
+    selected = virtual_data[selected_index]
+    if any(selected.get(column) is None for column in TRANSACTION_COLUMNS):
+        raise ValueError("The selected transaction is missing required data.")
+    return {column: str(selected[column]) for column in TRANSACTION_COLUMNS}
+
+
+def get_transaction_removal_summary(transaction):
+    user_barcode = str(transaction["barcode_user"])
+    product_barcode = str(transaction["barcode_prod"])
+
+    users = get_users()
+    user_matches = users[users["barcode"].astype(str) == user_barcode]
+    user_name = (
+        str(user_matches.iloc[0]["name"]) if len(user_matches) else "Unknown user"
+    )
+
+    products = get_prods()
+    product_matches = products[products["barcode"].astype(str) == product_barcode]
+    product_name = (
+        str(product_matches.iloc[0]["name"])
+        if len(product_matches)
+        else "Unknown product"
+    )
+
+    return html.Div(
+        [
+            html.P("Are you sure you want to remove this transaction?"),
+            html.P(f"User: {user_name} ({user_barcode})"),
+            html.P(f"Product: {product_name} ({product_barcode})"),
+            html.P(f"Timestamp: {transaction['timestamp']}"),
+        ]
+    )
+
+
+@db_transaction_raises
+def remove_transaction(transaction):
+    if not isinstance(transaction, dict) or any(
+        transaction.get(column) is None for column in TRANSACTION_COLUMNS
+    ):
+        raise ValueError("No valid transaction is pending removal.")
+
+    db = Container.get(Database)
+    transactions = db._transaction_table.get()
+    matches = pd.Series(True, index=transactions.index, dtype=bool)
+    for column in TRANSACTION_COLUMNS:
+        matches &= transactions[column].astype(str).eq(str(transaction[column]))
+
+    matching_indices = transactions.index[matches].tolist()
+    if not matching_indices:
+        raise ValueError(
+            "The selected transaction no longer exists. Nothing was changed."
+        )
+
+    backup_path = create_database_backup(
+        db.data_file,
+        label="pre_transaction_delete",
+    )
+    remaining = transactions.drop(index=matching_indices[0]).reset_index(drop=True)
+    db.upload_values_raises(remaining, "transactions")
+    update_values(last_stock_update_at="")
+    return backup_path
+
+
+@callback(
+    Output("remove_transaction_btn", "disabled"),
+    Input("trans_table", "derived_virtual_selected_rows"),
+)
+def disable_remove_transaction_button(selected_rows):
+    return not bool(selected_rows)
+
+
+@callback_with_error_queue(
+    4,
+    Output("remove_transaction_modal", "is_open"),
+    Output("remove_transaction_summary", "children"),
+    Output("pending_transaction_removal", "data"),
+    Output("transaction_removal_revision", "data"),
+    Input("remove_transaction_btn", "n_clicks"),
+    Input("cancel_remove_transaction", "n_clicks"),
+    Input("confirm_remove_transaction", "n_clicks"),
+    State("trans_table", "derived_virtual_data"),
+    State("trans_table", "derived_virtual_selected_rows"),
+    State("pending_transaction_removal", "data"),
+    State("transaction_removal_revision", "data"),
+)
+def control_transaction_removal(
+    remove_clicks,
+    cancel_clicks,
+    confirm_clicks,
+    virtual_data,
+    selected_rows,
+    pending_transaction,
+    revision,
+):
+    trigger = ctx.triggered_id
+    if trigger == "remove_transaction_btn" and remove_clicks:
+        selected = get_selected_transaction(virtual_data, selected_rows)
+        return (
+            True,
+            get_transaction_removal_summary(selected),
+            selected,
+            no_update,
+        )
+    if trigger == "cancel_remove_transaction" and cancel_clicks:
+        return False, no_update, None, no_update
+    if trigger == "confirm_remove_transaction" and confirm_clicks:
+        remove_transaction(pending_transaction)
+        return False, no_update, None, (revision or 0) + 1
+    return no_update, no_update, no_update, no_update
 
 
 @callback(
