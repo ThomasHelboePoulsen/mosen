@@ -7,6 +7,12 @@ from barcode.writer import ImageWriter
 from src.database.data_connection import get_users, get_prods
 
 
+_BARCODE_RENDER_OPTIONS = {
+    "write_text": False, #dont load caption font
+    "margin_bottom": 8,
+}
+
+
 def get_codes_users():
     users = get_users()
     numbers = list(map(str, users["barcode"]))
@@ -95,7 +101,7 @@ def generate_pdf(type, pdf_filename="output.pdf"):
 
         # Add barcode to PDF
         c.drawInlineImage(
-            barcode.render(text="  "),
+            barcode.render(writer_options=_BARCODE_RENDER_OPTIONS),
             x=x,
             y=y,
             width=width,
