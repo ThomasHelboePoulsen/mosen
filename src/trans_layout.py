@@ -16,7 +16,6 @@ from src.database.data_connection import (
     get_users,
     get_current_trans,
     update_current_trans,
-    add_transactions,
     reset_current_trans,
     get_show_bill,
     get_waste_cents,
@@ -167,6 +166,9 @@ def checkout_cart_to(user_barcode, db:Database):
     if len(user) and int(user.iloc[0].get("paid_cents", 0)) > 0:
         raise ValueError(f"User has already paid: {user_barcode}")
     current = db._temporary_table.get()
+    if current.empty:
+        return
+
     new_rows = pd.DataFrame(
         [
             {
@@ -180,6 +182,7 @@ def checkout_cart_to(user_barcode, db:Database):
     add_result, bad_rows = db._transaction_table.append(new_rows)
     if not add_result == "success":
         raise ValueError(f"Failed to add transactions due to the following bad rows: {bad_rows}")
+    db.upload_values_raises([], "temporary")
 
 
 def strings_map_to_same_number(s1,s2):

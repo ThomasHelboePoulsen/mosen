@@ -1,5 +1,8 @@
 import types
+from threading import Barrier, Thread
+
 import pandas as pd
+import pytest
 from dash import no_update
 
 from src import trans_layout
@@ -56,6 +59,44 @@ def _load_balance_graph_data(temp_db):
                 },
             ]
         )
+    )
+
+
+def _load_checkout_data(temp_db, product_count=1):
+    temp_db.upload_values(
+        [
+            {
+                "barcode": "1234",
+                "name": "U",
+                "rank": "r",
+                "team": "t",
+                "is_guest": 0,
+            }
+        ],
+        "users",
+    )
+    temp_db.upload_values(
+        [
+            {
+                "barcode": "101",
+                "name": "P",
+                "price": 1.0,
+                "category": "c",
+                "current_stock": 10,
+                "initial_stock": 10,
+            }
+        ],
+        "prods",
+    )
+    temp_db.upload_values(
+        [
+            {
+                "barcode_prod": "101",
+                "name": "P",
+            }
+            for _ in range(product_count)
+        ],
+        "temporary",
     )
 
 
@@ -309,11 +350,6 @@ def test_prod_barcode_success(monkeypatch, temp_db):
         {"barcode_prod": "101", "name": "P"}
     ], "temporary")
 
-    def fake_add(rows):
-        return "success", []
-
-    monkeypatch.setattr(trans_layout, "add_transactions", fake_add)
-
     # Act
     res = trans_layout.open_trans_modal(None, 1, "123", "123", [])
 
@@ -322,6 +358,110 @@ def test_prod_barcode_success(monkeypatch, temp_db):
     assert res[1] == ""
     assert res[2] is no_update
     assert res[3] is no_update
+
+
+def test_checkout_records_basket_once_and_clears_temporary_table(temp_db):
+    # Arrange
+    _load_checkout_data(temp_db, product_count=2)
+
+    # Act
+    trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert len(temp_db.transactions) == 2
+    assert temp_db.temporary.empty
+
+
+def test_repeated_checkout_is_a_successful_no_op(temp_db):
+    # Arrange
+    _load_checkout_data(temp_db, product_count=2)
+
+    # Act
+    trans_layout.checkout_cart_to("1234", temp_db)
+    trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert len(temp_db.transactions) == 2
+    assert temp_db.temporary.empty
+
+
+def test_empty_checkout_is_a_successful_no_op(temp_db):
+    # Arrange
+    _load_checkout_data(temp_db, product_count=0)
+
+    # Act
+    trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert temp_db.transactions.empty
+    assert temp_db.temporary.empty
+
+
+def test_concurrent_checkout_consumes_basket_only_once(temp_db):
+    # Arrange
+    _load_checkout_data(temp_db, product_count=2)
+    start = Barrier(3)
+    errors = []
+
+    def checkout():
+        start.wait()
+        try:
+            trans_layout.checkout_cart_to("1234", temp_db)
+        except Exception as error:
+            errors.append(error)
+
+    threads = [Thread(target=checkout) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+
+    # Act
+    start.wait()
+    for thread in threads:
+        thread.join()
+
+    # Assert
+    assert errors == []
+    assert len(temp_db.transactions) == 2
+    assert temp_db.temporary.empty
+
+
+def test_checkout_append_failure_preserves_temporary_basket(monkeypatch, temp_db):
+    # Arrange
+    _load_checkout_data(temp_db)
+    monkeypatch.setattr(
+        temp_db._transaction_table,
+        "append",
+        lambda _rows: ("failed", [{"row": 1}]),
+    )
+
+    # Act
+    with pytest.raises(ValueError, match="Failed to add transactions"):
+        trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert temp_db.transactions.empty
+    assert len(temp_db.temporary) == 1
+
+
+def test_checkout_clear_failure_rolls_back_purchase_and_preserves_basket(
+    monkeypatch,
+    temp_db,
+):
+    # Arrange
+    _load_checkout_data(temp_db)
+
+    def fail_to_clear(_rows):
+        raise RuntimeError("temporary clear failed")
+
+    monkeypatch.setattr(temp_db._temporary_table, "set", fail_to_clear)
+
+    # Act
+    with pytest.raises(RuntimeError, match="temporary clear failed"):
+        trans_layout.checkout_cart_to("1234", temp_db)
+
+    # Assert
+    assert temp_db.transactions.empty
+    assert len(temp_db.temporary) == 1
 
 
 def test_empty_barcode_open(monkeypatch, temp_db):
