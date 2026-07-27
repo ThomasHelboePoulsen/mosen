@@ -14,6 +14,21 @@ def _get_columns(data):
     ]
 
 
+def get_tooltip_data(data):
+    if data is None:
+        return None
+    return [
+        {
+            column: {
+                "value": str(value),
+                "type": "markdown",
+            }
+            for column, value in row.items()
+        }
+        for row in data
+    ]
+
+
 def get_upload(id: str):
     return dcc.Upload(
         ["Drag and drop or ", html.A("Select a File")],
@@ -50,20 +65,7 @@ def get_table(id, data, height, row_selectable=None):
             "lineHeight": "1.1",
             "padding": "2px 4px",
         },
-        tooltip_data=(
-            None
-            if data is None
-            else [
-                {
-                    column: {
-                        "value": str(value),
-                        "type": "markdown",
-                    }
-                    for column, value in row.items()
-                }
-                for row in data
-            ]
-        ),
+        tooltip_data=get_tooltip_data(data),
         tooltip_duration=None,
         sort_action="native",
     )

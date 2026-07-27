@@ -1,4 +1,16 @@
-from dash import Output, Input, State, callback, ctx, no_update, html, ALL, MATCH, dcc
+from dash import (
+    Output,
+    Input,
+    State,
+    callback,
+    clientside_callback,
+    ctx,
+    no_update,
+    html,
+    ALL,
+    MATCH,
+    dcc,
+)
 import pandas as pd
 import plotly.express as px
 from src.database.data_connection import (
@@ -23,6 +35,7 @@ from src.container import Container
 from src.database.data_connection import Database
 from src.analytics.overview_plot import create_overview
 from src.analytics.bar_chart_format import format_count_bar_chart
+from src.components import get_tooltip_data
 
 import base64
 import io
@@ -36,6 +49,67 @@ from datetime import datetime
 
 BACKUP_DIR = "swamp_backups"
 TRANSACTION_COLUMNS = ("barcode_user", "barcode_prod", "timestamp")
+
+
+def filter_income_rows(rows, query):
+    source_rows = [dict(row) for row in (rows or [])]
+    search = str(query or "").strip().casefold()
+    if not search:
+        return source_rows
+
+    exact_barcode_matches = [
+        row
+        for row in source_rows
+        if str(row.get("barcode", "")).strip().casefold() == search
+    ]
+    if exact_barcode_matches:
+        return exact_barcode_matches
+
+    return [
+        row
+        for row in source_rows
+        if search in str(row.get("name", "")).casefold()
+        or str(row.get("barcode", "")).strip().casefold().startswith(search)
+    ]
+
+
+@callback(
+    Output("income_table", "data"),
+    Output("income_table", "tooltip_data"),
+    Output("income_search_status", "children"),
+    Input("income_search", "value"),
+    Input("income_table_all_rows", "data"),
+)
+def update_income_lookup(query, rows):
+    filtered_rows = filter_income_rows(rows, query)
+    has_query = bool(str(query or "").strip())
+    status = "No matching user." if has_query and not filtered_rows else ""
+    return filtered_rows, get_tooltip_data(filtered_rows), status
+
+
+clientside_callback(
+    """
+    function(activeTab, submissions, rowsUpdated) {
+        if (activeTab !== "economy") {
+            return window.dash_clientside.no_update;
+        }
+
+        window.setTimeout(function() {
+            const input = document.getElementById("income_search");
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }, 0);
+        return Date.now();
+    }
+    """,
+    Output("income_lookup_focus", "data"),
+    Input("setting_tabs", "value"),
+    Input("income_search", "n_submit"),
+    Input("income_table_all_rows", "modified_timestamp"),
+    prevent_initial_call=True,
+)
 
 
 def create_database_backup(data_file="beerbase.db", label="backup", backup_dir=None):

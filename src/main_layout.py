@@ -180,6 +180,7 @@ def product_settings_layout():
 def transaction_settings_layout():
     waste = get_waste()
     users = get_users()
+    income_rows = get_income()
     allocated_waste = (
         users[users["waste_cents"].astype(int) >= 0]["waste_cents"].astype(int).sum()
         / 100
@@ -248,7 +249,22 @@ def transaction_settings_layout():
                                         row_selectable="single",
                                     ),
                                     html.Hr(),
-                                    get_table("income_table", get_income(), 200),
+                                    html.Label(
+                                        "Find user by name or barcode",
+                                        htmlFor="income_search",
+                                    ),
+                                    dbc.Input(
+                                        id="income_search",
+                                        placeholder="Type a name or scan a barcode",
+                                        type="text",
+                                        autoComplete="off",
+                                    ),
+                                    html.Div(
+                                        id="income_search_status",
+                                        className="text-danger",
+                                        style={"minHeight": "24px"},
+                                    ),
+                                    get_table("income_table", income_rows, 200),
                                 ]
                             ),
                             width=9,
@@ -263,6 +279,8 @@ def transaction_settings_layout():
             study_users_modal(),
             dcc.Download(id="payments_download"),
             dcc.Store(id="pending_transaction_removal"),
+            dcc.Store(id="income_table_all_rows", data=income_rows),
+            dcc.Store(id="income_lookup_focus"),
             dcc.Store(id={"index": "transactions", "type": "bad_rows"}),
         ],
     )

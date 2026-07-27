@@ -1,4 +1,5 @@
 import base64
+import copy
 import sqlite3
 import types
 
@@ -16,6 +17,23 @@ def _encoded_csv(csv):
     return "data:text/csv;base64," + base64.b64encode(
         csv.encode("utf-8")
     ).decode("ascii")
+
+
+def _find_component(component, component_id):
+    if getattr(component, "id", None) == component_id:
+        return component
+
+    children = getattr(component, "children", None)
+    if children is None:
+        return None
+    if not isinstance(children, (list, tuple)):
+        children = [children]
+
+    for child in children:
+        found = _find_component(child, component_id)
+        if found is not None:
+            return found
+    return None
 
 
 def _load_transaction_data(temp_db, transactions=None):
@@ -54,6 +72,133 @@ def _load_transaction_data(temp_db, transactions=None):
         ],
         "transactions",
     )
+
+
+def test_income_lookup_empty_query_returns_all_rows_without_mutating_source():
+    # Arrange
+    rows = [
+        {"barcode": "1000", "name": "Alice", "price": 12.5},
+        {"barcode": "1001", "name": "Bob", "price": 8},
+    ]
+    original_rows = copy.deepcopy(rows)
+
+    # Act
+    result = main_page_callbacks.filter_income_rows(rows, "  ")
+
+    # Assert
+    assert result == rows
+    assert result is not rows
+    assert all(
+        result_row is not source_row
+        for result_row, source_row in zip(result, rows)
+    )
+    assert rows == original_rows
+
+
+def test_income_lookup_matches_partial_names_case_insensitively():
+    # Arrange
+    rows = [
+        {"barcode": "1000", "name": "Alice Jensen", "price": 12.5},
+        {"barcode": "1001", "name": "ALICE Nielsen", "price": 8},
+        {"barcode": "1002", "name": "Bob", "price": 4},
+    ]
+
+    # Act
+    result = main_page_callbacks.filter_income_rows(rows, "alice")
+
+    # Assert
+    assert [row["barcode"] for row in result] == ["1000", "1001"]
+
+
+def test_income_lookup_uses_prefix_until_barcode_is_exact():
+    # Arrange
+    rows = [
+        {"barcode": "100", "name": "Alice", "price": 12.5},
+        {"barcode": "1000", "name": "Bob", "price": 8},
+        {"barcode": "2000", "name": "Carol", "price": 4},
+    ]
+
+    # Act
+    partial_result = main_page_callbacks.filter_income_rows(rows, "10")
+    exact_result = main_page_callbacks.filter_income_rows(rows, "100")
+
+    # Assert
+    assert [row["barcode"] for row in partial_result] == ["100", "1000"]
+    assert exact_result == [{"barcode": "100", "name": "Alice", "price": 12.5}]
+
+
+def test_income_lookup_callback_preserves_payment_values_and_tooltips():
+    # Arrange
+    rows = [
+        {
+            "barcode": "1000",
+            "name": "Alice",
+            "purchases": 10,
+            "waste": 2.5,
+            "paid": 0,
+            "price": 12.5,
+        },
+        {
+            "barcode": "1001",
+            "name": "Bob",
+            "purchases": 8,
+            "waste": None,
+            "paid": 0,
+            "price": 8,
+        },
+    ]
+
+    # Act
+    filtered, tooltips, status = main_page_callbacks.update_income_lookup(
+        "1000", rows
+    )
+
+    # Assert
+    assert filtered == [rows[0]]
+    assert filtered[0]["price"] == 12.5
+    assert tooltips[0]["price"]["value"] == "12.5"
+    assert status == ""
+
+
+def test_income_lookup_callback_reports_no_match():
+    # Arrange
+    rows = [{"barcode": "1000", "name": "Alice", "price": 12.5}]
+
+    # Act
+    filtered, tooltips, status = main_page_callbacks.update_income_lookup(
+        "missing", rows
+    )
+
+    # Assert
+    assert filtered == []
+    assert tooltips == []
+    assert status == "No matching user."
+
+
+def test_economy_layout_reuses_one_income_snapshot(monkeypatch, temp_db):
+    # Arrange
+    _load_transaction_data(temp_db)
+    expected_rows = get_income()
+    income_calls = 0
+
+    def tracked_get_income():
+        nonlocal income_calls
+        income_calls += 1
+        return copy.deepcopy(expected_rows)
+
+    monkeypatch.setattr(main_layout, "get_income", tracked_get_income)
+
+    # Act
+    layout = main_layout.transaction_settings_layout()
+
+    # Assert
+    income_table = _find_component(layout, "income_table")
+    income_store = _find_component(layout, "income_table_all_rows")
+    income_search = _find_component(layout, "income_search")
+    assert income_calls == 1
+    assert income_table.data == expected_rows
+    assert income_store.data == expected_rows
+    assert income_search.placeholder == "Type a name or scan a barcode"
 
 
 def test_payment_modal_stays_closed_when_economy_tab_renders(monkeypatch, temp_db):
