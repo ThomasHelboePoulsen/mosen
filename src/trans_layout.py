@@ -5,7 +5,7 @@ import plotly.express as px
 from datetime import datetime
 from src.components import get_barcode, get_table
 from src.error_handler import append_error, callback_with_error_queue,Result
-from src.barcode import BarcodePartition, get_barcode as get_valid_barcode
+from src.barcode import BarcodePartition, get_barcode as get_valid_barcode, is_barcode
 from src.container import Container
 from src.database.data_connection import (
     Database,
@@ -225,7 +225,13 @@ def new_trans(trigger, _barcode, user_barcode):
             ]
             current = pd.concat([current, pd.DataFrame(data)], ignore_index=True)
     elif str(int(barcode)) not in list(prods["barcode"]):
-        not_found = "Product" if int(barcode) < 1000 else "User"
+        if is_barcode(barcode, BarcodePartition.PRODUCT):
+            not_found = "product"
+        elif is_barcode(barcode, BarcodePartition.USER) and len(barcode) < 7:
+            not_found = "user"
+        else:
+            not_found = "product"
+            barcode = str(barcode) + " (did you scan the actual bottle/can by mistake?)"
         raise ValueError(f"{not_found} not found: {barcode}")
     else:
         try:
