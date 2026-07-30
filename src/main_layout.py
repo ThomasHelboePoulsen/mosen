@@ -203,7 +203,7 @@ def transaction_settings_layout():
                                     html.P(f"Allocated Waste: {allocated_waste}"),
                                     html.P(f"Next Strategy: {get_waste_strategy()}"),
                                     html.Hr(),
-                                    html.P(f"Current Return: {get_current_return()}"),
+                                    html.P(f"Stock Value: {get_current_return()}"),
                                     html.Hr(),
                                     dbc.Button(
                                         "Export payments", id="export_payments_btn"
