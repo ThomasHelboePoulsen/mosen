@@ -1,7 +1,10 @@
 import base64
 import copy
+from concurrent.futures import ThreadPoolExecutor
+import io
 import sqlite3
 import types
+import zipfile
 
 import pytest
 from dash import no_update
@@ -71,6 +74,23 @@ def _load_transaction_data(temp_db, transactions=None):
             }
         ],
         "transactions",
+    )
+
+
+def _load_barcode_export_data(temp_db, users):
+    temp_db.upload_values(users, "users")
+    temp_db.upload_values(
+        [
+            {
+                "barcode": 101,
+                "name": "Beer",
+                "price": 10,
+                "category": "Drinks",
+                "current_stock": 8,
+                "initial_stock": 10,
+            }
+        ],
+        "prods",
     )
 
 
@@ -616,3 +636,97 @@ def test_failed_import_rolls_back_changes_but_keeps_pre_import_backup(
     finally:
         con.close()
     assert backed_up_user == "Original User"
+
+
+def test_export_barcodes_returns_zip_with_pdfs_and_complete_label_report(temp_db):
+    # Arrange
+    _load_barcode_export_data(
+        temp_db,
+        [
+            {
+                "barcode": 1000,
+                "name": "Testuser Alpha Example",
+                "rank": "Member",
+                "team": "A",
+            },
+            {
+                "barcode": 1001,
+                "name": "Testuser Another Example",
+                "rank": "Member",
+                "team": "A",
+            },
+        ],
+    )
+    # Act
+    download = main_page_callbacks.export_barcodes.__wrapped__(1)
+    archive_bytes = base64.b64decode(download["content"])
+
+    # Assert
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        assert set(archive.namelist()) == {
+            "user_barcodes.pdf",
+            "prod_barcodes.pdf",
+            "multiplier_barcodes.pdf",
+            "Barcode label report.txt",
+        }
+        report = archive.read("Barcode label report.txt").decode("utf-8")
+    assert "Labels changed: 2" in report
+    assert "Printed-name collision groups: 1" in report
+    assert (
+        "1000 'Testuser Alpha Example'; "
+        "1001 'Testuser Another Example'"
+    ) in report
+
+
+def test_export_barcodes_surfaces_product_name_width_error(monkeypatch):
+    # Arrange
+    message = (
+        "Product name 'An extremely long name' (barcode 102) is too long for "
+        "its printed barcode label. Shorten the name and export again."
+    )
+
+    def reject_product_name(**_kwargs):
+        raise ValueError(message)
+
+    monkeypatch.setattr(main_page_callbacks, "generate_pdf", reject_product_name)
+
+    # Act
+    download, errors = main_page_callbacks.export_barcodes(1, [])
+
+    # Assert
+    assert download is no_update
+    assert errors[0]["msg"] == message
+
+
+def test_concurrent_barcode_exports_use_independent_temporary_files(temp_db):
+    # Arrange
+    _load_barcode_export_data(
+        temp_db,
+        [
+            {
+                "barcode": 1000,
+                "name": "Testuser",
+                "rank": "Member",
+                "team": "A",
+            }
+        ],
+    )
+
+    def export_once(_index):
+        return main_page_callbacks.export_barcodes.__wrapped__(1)
+
+    # Act
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        downloads = list(pool.map(export_once, range(4)))
+
+    # Assert
+    for download in downloads:
+        archive_bytes = base64.b64decode(download["content"])
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            assert archive.testzip() is None
+            assert set(archive.namelist()) == {
+                "user_barcodes.pdf",
+                "prod_barcodes.pdf",
+                "multiplier_barcodes.pdf",
+                "Barcode label report.txt",
+            }

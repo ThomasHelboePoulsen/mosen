@@ -29,7 +29,11 @@ from src.database.data_connection import (
 from src.analytics.trans_calculations import get_income
 from src.analytics.timestamps import parse_timestamp, parse_transaction_timestamps
 from src.analytics.waste_allocation import allocate_waste
-from src.barcode_generator import generate_pdf
+from src.barcode_generator import (
+    BARCODE_EXPORT_REPORT_FILENAME,
+    build_barcode_export_report,
+    generate_pdf,
+)
 from src.error_handler import append_error, callback_with_error_queue
 from src.container import Container
 from src.database.data_connection import Database
@@ -41,6 +45,7 @@ import base64
 import io
 import shutil
 import os
+import tempfile
 import zipfile
 import builtins
 from dataclasses import dataclass
@@ -445,28 +450,30 @@ def export_barcodes(trigger):
     if trigger is None:
         return no_update
 
-    types = ["users", "prods", "multipliers"]
-    temp_files = []
-    
-    for type in types:
-        pdf_filename = f"{type[:-1]}_barcodes.pdf"
-        generate_pdf(
-            type=type,
-            pdf_filename=pdf_filename,
-        )
-        temp_files.append(pdf_filename)
-    
+    generated_at = datetime.now()
+    barcode_types = ["prods", "users", "multipliers"]
     zip_buffer = io.BytesIO()
-    zip_filename = f"barcodes_{datetime.now().strftime('%d_%m_%Y_%H_%M_%S')}.zip"
+    zip_filename = f"barcodes_{generated_at.strftime('%d_%m_%Y_%H_%M_%S')}.zip"
 
-    with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-        for pdf in temp_files:
-            with open(pdf, 'rb') as f:
-                zipf.writestr(pdf, f.read())
-    
-    for pdf in temp_files:
-        if os.path.exists(pdf):
-            os.remove(pdf)
+    with tempfile.TemporaryDirectory(prefix="barcode_export_") as temp_dir:
+        pdf_files = []
+        user_labels = []
+        for barcode_type in barcode_types:
+            pdf_filename = f"{barcode_type[:-1]}_barcodes.pdf"
+            pdf_path = os.path.join(temp_dir, pdf_filename)
+            generated_labels = generate_pdf(
+                barcode_type=barcode_type,
+                pdf_filename=pdf_path,
+            )
+            if barcode_type == "users":
+                user_labels = generated_labels
+            pdf_files.append((pdf_filename, pdf_path))
+
+        report = build_barcode_export_report(user_labels, generated_at)
+        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+            for pdf_filename, pdf_path in pdf_files:
+                zipf.write(pdf_path, arcname=pdf_filename)
+            zipf.writestr(BARCODE_EXPORT_REPORT_FILENAME, report.encode("utf-8"))
 
     zip_buffer.seek(0)
     return dcc.send_bytes(zip_buffer.getvalue(), filename=zip_filename)
