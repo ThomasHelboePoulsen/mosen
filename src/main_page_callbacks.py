@@ -40,6 +40,10 @@ from src.database.data_connection import Database
 from src.analytics.overview_plot import create_overview
 from src.analytics.bar_chart_format import format_count_bar_chart
 from src.components import get_tooltip_data
+from src.diagnostics import (
+    build_diagnostics_archive,
+    get_diagnostics_status,
+)
 
 import base64
 import io
@@ -656,6 +660,34 @@ def backup_database(trigger, interval):
         db = Container.get(Database)
         return create_database_backup(db.data_file, label="backup")
     return no_update
+
+
+@callback(
+    Output("diagnostics_status", "children"),
+    Output("download_diagnostics_btn", "disabled"),
+    Input("settings_modal", "is_open"),
+)
+def refresh_diagnostics_status(settings_open):
+    if not settings_open:
+        return no_update, no_update
+
+    status_text, download_available = get_diagnostics_status()
+    return status_text, not download_available
+
+
+@callback_with_error_queue(
+    1,
+    Output("diagnostics_download", "data"),
+    Input("download_diagnostics_btn", "n_clicks"),
+)
+def download_diagnostics(trigger):
+    if trigger is None:
+        return no_update
+
+    archive = build_diagnostics_archive()
+    timestamp = datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
+    filename = f"swampmachine_diagnostics_{timestamp}.zip"
+    return dcc.send_bytes(archive, filename=filename)
 
 
 @callback(Output("backup_interval", "interval"), Input("settings_backup_time", "value"))

@@ -4,6 +4,7 @@ import uuid
 import functools
 from typing import Any, Tuple, Optional
 from dataclasses import dataclass
+from src.diagnostics import log_displayed_error
 
 
 ERROR_QUEUE_ID = "error-queue"
@@ -37,8 +38,12 @@ def get_error_view_components():
     ]
 
 
-def append_error(queue,msg,src="test",lifespan_seconds=6):
-    return (queue or []) + [_make_error(msg,src,lifespan_seconds)]
+def append_error(queue, msg, src="test", lifespan_seconds=6, error=None):
+    try:
+        log_displayed_error(src, msg, error)
+    except Exception:
+        pass
+    return (queue or []) + [_make_error(msg, src, lifespan_seconds)]
 
 def _make_error(msg, src,lifespan_seconds):
     return {"id": str(uuid.uuid4()), "msg": msg, "src": src, "expires": _expires_at(lifespan_seconds)}
@@ -179,6 +184,7 @@ def callback_with_error_queue(num_outputs: int, *callback_args, **callback_kwarg
                 error_queue,
                 msg=str(e),
                 src=func.__name__,
+                error=e,
             )
 
             try:
@@ -192,7 +198,13 @@ def callback_with_error_queue(num_outputs: int, *callback_args, **callback_kwarg
                 return (*callback_outputs, error_update)
             except Exception as e:
                 if error_update is not no_update:
-                    return (*([no_update] * num_outputs), append_error(error_update, msg=str(e), src=func.__name__))
+                    updated_errors = append_error(
+                        error_update,
+                        msg=str(e),
+                        src=func.__name__,
+                        error=e,
+                    )
+                    return (*([no_update] * num_outputs), updated_errors)
                 return (*([no_update] * num_outputs), err(e))
 
         return wrapper

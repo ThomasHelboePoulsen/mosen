@@ -730,3 +730,116 @@ def test_concurrent_barcode_exports_use_independent_temporary_files(temp_db):
                 "multiplier_barcodes.pdf",
                 "Barcode label report.txt",
             }
+
+
+def test_settings_layout_contains_compact_diagnostics_controls(temp_db):
+    # Act
+    layout = main_layout.settings_settings_layout()
+
+    # Assert
+    status = _find_component(layout, "diagnostics_status")
+    download_button = _find_component(layout, "download_diagnostics_btn")
+    download = _find_component(layout, "diagnostics_download")
+    diagnostics_row = _find_component(layout, "diagnostics_row")
+    assert status is not None
+    assert download_button is not None
+    assert download_button.disabled is True
+    assert download_button.className == "d-grid gap-2 col-10 mx-auto"
+    assert download is not None
+    assert diagnostics_row is not None
+    assert [column.xs for column in diagnostics_row.children] == [12, 12, 12]
+    assert [column.lg for column in diagnostics_row.children] == [4, 4, 4]
+
+
+def test_settings_layout_combines_bill_preview_controls(temp_db):
+    # Act
+    layout = main_layout.settings_settings_layout()
+
+    # Assert
+    bill_preview_row = _find_component(layout, "bill_preview_row")
+    display_switch = _find_component(layout, "display_bill_switch")
+    extra_waste_input = _find_component(
+        layout, "bill_preview_waste_extra_percent"
+    )
+    assert bill_preview_row is not None
+    assert len(bill_preview_row.children) == 3
+    assert [column.xs for column in bill_preview_row.children] == [12, 12, 12]
+    assert [column.lg for column in bill_preview_row.children] == [4, 4, 4]
+    assert bill_preview_row.children[0].children.children == "Bill preview: "
+    assert getattr(display_switch, "label", None) is None
+    assert extra_waste_input is not None
+
+
+def test_settings_layout_aligns_switches_on_wide_screens(temp_db):
+    # Act
+    layout = main_layout.settings_settings_layout()
+
+    # Assert
+    bill_preview_row = _find_component(layout, "bill_preview_row")
+    top_user_chart_row = _find_component(layout, "top_user_chart_row")
+    assert bill_preview_row.children[1].lg == 4
+    assert top_user_chart_row.children[1].lg == 4
+    assert bill_preview_row.children[1].xs == 12
+    assert top_user_chart_row.children[1].xs == 12
+
+
+def test_settings_layout_combines_timer_controls(temp_db):
+    # Act
+    layout = main_layout.settings_settings_layout()
+
+    # Assert
+    timers_row = _find_component(layout, "timers_row")
+    backup_timer = _find_component(layout, "settings_backup_time")
+    cache_timer = _find_component(layout, "settings_cache_validation_time")
+    assert timers_row is not None
+    assert len(timers_row.children) == 5
+    assert [column.xs for column in timers_row.children[:3]] == [12, 12, 12]
+    assert [column.lg for column in timers_row.children[:3]] == [4, 4, 4]
+    assert timers_row.children[0].children.children == "Timers:"
+    assert backup_timer is not None
+    assert cache_timer is not None
+
+
+@pytest.mark.parametrize(
+    ("status_text", "available", "expected_disabled"),
+    [
+        ("Logging active | 2 files | 6.0 MB", True, False),
+        ("Logging unavailable: access denied", False, True),
+    ],
+)
+def test_refresh_diagnostics_status(
+    monkeypatch,
+    status_text,
+    available,
+    expected_disabled,
+):
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "get_diagnostics_status",
+        lambda: (status_text, available),
+    )
+
+    # Act
+    text, disabled = main_page_callbacks.refresh_diagnostics_status(True)
+
+    # Assert
+    assert text == status_text
+    assert disabled is expected_disabled
+
+
+def test_download_diagnostics_returns_archive(monkeypatch):
+    # Arrange
+    archive_bytes = b"diagnostics archive"
+    monkeypatch.setattr(
+        main_page_callbacks,
+        "build_diagnostics_archive",
+        lambda: archive_bytes,
+    )
+
+    # Act
+    download = main_page_callbacks.download_diagnostics.__wrapped__(1)
+
+    # Assert
+    assert base64.b64decode(download["content"]) == archive_bytes
+    assert download["filename"].startswith("swampmachine_diagnostics_")
+    assert download["filename"].endswith(".zip")

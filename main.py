@@ -7,15 +7,23 @@ import pythonnet  # <---- Hook for .NET framework
 
 from src.main_layout import layout_func
 from app import app
+from src.diagnostics import configure_logging
 
-log = logging.getLogger("werkzeug")
-log.setLevel(logging.ERROR)
+
+configure_logging()
+logger = logging.getLogger("swampmachine.lifecycle")
+
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 app.layout = layout_func
 
 
 def run_my_server():
-    app.run(debug=False)
+    try:
+        app.run(debug=False)
+    except Exception:
+        logger.exception("dash_server_failed")
+        raise
 
 
 run_in_web = False
@@ -26,6 +34,7 @@ if __name__ == "__main__":
     try:
         # Disable ways of closing the app
         print("Running....")
+        logger.info("application_started run_in_web=%s", run_in_web)
         k.block_key("alt")
         k.block_key("windows")
         h = windll.user32.FindWindowA(b"Shell_TrayWnd", None)
@@ -44,8 +53,12 @@ if __name__ == "__main__":
                 on_top=True,
             )
             webview.start()
+    except Exception:
+        logger.exception("application_failed")
+        raise
     finally:
         # Re-enable all keys and taskbars even if startup or webview fails.
         k.unhook_all()
         if h is not None:
             windll.user32.ShowWindow(h, 9)
+        logger.info("application_stopped")

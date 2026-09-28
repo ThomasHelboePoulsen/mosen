@@ -379,33 +379,34 @@ def settings_settings_layout():
                         dbc.Col(
                             dbc.Row(
                                 [
-                                    dbc.Col(html.P("Display current bill: "), width=4),
+                                    dbc.Col(html.P("Bill preview: "), xs=12, lg=4),
                                     dbc.Col(
                                         dbc.Switch(
                                             id="display_bill_switch",
                                             value=get_show_bill(),
                                             className="d-grid gap-2 col-10 mx-auto",
-                                        )
-                                    ),
-                                ]
-                            ),
-                            width=12,
-                        ),
-                        html.Hr(),
-                        dbc.Col(
-                            dbc.Row(
-                                [
-                                    dbc.Col(html.P("Bill preview extra waste (%): "), width=4),
-                                    dbc.Col(
-                                        dbc.Input(
-                                            value=get_bill_preview_waste_extra_percent(),
-                                            id="bill_preview_waste_extra_percent",
-                                            type="number",
-                                            min=0,
                                         ),
-                                        width=4,
+                                        xs=12,
+                                        lg=4,
                                     ),
-                                ]
+                                    dbc.Col(
+                                        dbc.InputGroup(
+                                            [
+                                                dbc.InputGroupText("Extra waste (%)"),
+                                                dbc.Input(
+                                                    value=get_bill_preview_waste_extra_percent(),
+                                                    id="bill_preview_waste_extra_percent",
+                                                    type="number",
+                                                    min=0,
+                                                ),
+                                            ]
+                                        ),
+                                        xs=12,
+                                        lg=4,
+                                    ),
+                                ],
+                                id="bill_preview_row",
+                                align="center",
                             ),
                             width=12,
                         ),
@@ -413,15 +414,20 @@ def settings_settings_layout():
                         dbc.Col(
                             dbc.Row(
                                 [
-                                    dbc.Col(html.P("Toggle top user chart"), width=4),
+                                    dbc.Col(
+                                        html.P("Toggle top user chart"), xs=12, lg=4
+                                    ),
                                     dbc.Col(
                                         dbc.Switch(
                                             id="toggle_top_user_chart",
                                             value=False,
                                             className="d-grid gap-2 col-10 mx-auto",
                                         ),
+                                        xs=12,
+                                        lg=4,
                                     ),
                                 ],
+                                id="top_user_chart_row",
                                 align="center",
                             ),
                             width=12,
@@ -441,51 +447,56 @@ WARNING: Do not use this on intro trips. It shows individual user data, so only 
                         dbc.Col(
                             dbc.Row(
                                 [
-                                    dbc.Col(html.P("Backup Timer"), width=4),
+                                    dbc.Col(html.P("Timers:"), xs=12, lg=4),
                                     dbc.Col(
-                                        dbc.Input(
-                                            value=get_backup_time(),
-                                            id="settings_backup_time",
-                                            type="number",
-                                            minLength=0,
+                                        dbc.InputGroup(
+                                            [
+                                                dbc.InputGroupText("Backup (min)"),
+                                                dbc.Input(
+                                                    value=get_backup_time(),
+                                                    id="settings_backup_time",
+                                                    type="number",
+                                                    minLength=0,
+                                                ),
+                                            ]
                                         ),
-                                        width=4,
+                                        xs=12,
+                                        lg=4,
+                                    ),
+                                    dbc.Col(
+                                        dbc.InputGroup(
+                                            [
+                                                dbc.InputGroupText(
+                                                    "Cache validation (min)"
+                                                ),
+                                                dbc.Input(
+                                                    value=get_cache_validation_time(),
+                                                    id="settings_cache_validation_time",
+                                                    type="number",
+                                                    minLength=0,
+                                                ),
+                                            ]
+                                        ),
+                                        xs=12,
+                                        lg=4,
                                     ),
                                     dbc.Tooltip(
                                         children="Timer for making backups of the database. Timer is set in minutes. Backups are stored in dedicated 'backups' folder. Setting this to 0, means the program will not create backups, and you will be on your own when the app inevitabily fails you",
                                         target="settings_backup_time",
                                         placement="right",
                                     ),
+                                    dbc.Tooltip(
+                                        children="Timer for checking if the cache is outdated. It should never happen, but just in case it will trigger a frontend error. This check blocks all other queries while it runs, so setting it to a very low value might cause performance issues. Setting it to 0 means the app will never validate the cache, which means that if it ever gets stale, you will be on your own.",
+                                        target="settings_cache_validation_time",
+                                        className="wide-tooltip",
+                                        placement="right",
+                                    ),
                                 ],
+                                id="timers_row",
                                 align="center",
                             ),
                             width=12,
                         ),
-                            html.Hr(),
-                            dbc.Col(
-                                dbc.Row(
-                                    [
-                                        dbc.Col(html.P("Cache Validation Timer"), width=4),
-                                        dbc.Col(
-                                            dbc.Input(
-                                                value=get_cache_validation_time(),
-                                                id="settings_cache_validation_time",
-                                                type="number",
-                                                minLength=0,
-                                            ),
-                                            width=4,
-                                        ),
-                                        dbc.Tooltip(
-                                            children="Timer for checking if the cache is outdated. It should never happen, but just in case it will trigger a frontend error. This check blocks all other queries while it runs, so setting it to a very low value might cause performance issues. Setting it to 0 means the app will never validate the cache, which means that if it ever gets stale, you will be on your own.",
-                                            target="settings_cache_validation_time",
-                                            className="wide-tooltip",
-                                            placement="right",
-                                        ),
-                                    ],
-                                    align="center",
-                                ),
-                                width=12,
-                            ),
                         html.Hr(),
                         dbc.Col(
                             dbc.Row(
@@ -510,6 +521,61 @@ WARNING: Do not use this on intro trips. It shows individual user data, so only 
                                         align="center",
                                     ),
                                 ],
+                                align="center",
+                            ),
+                            width=12,
+                        ),
+                        html.Hr(),
+                        dbc.Col(
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        [
+                                            html.P(
+                                                "Diagnostics",
+                                                className="fw-bold mb-1",
+                                            ),
+                                            html.Small(
+                                                "Attach the downloaded ZIP when reporting "
+                                                "a problem. Error messages may contain "
+                                                "failed input.",
+                                                className="text-muted",
+                                            ),
+                                        ],
+                                        xs=12,
+                                        lg=4,
+                                    ),
+                                    dbc.Col(
+                                        [
+                                            html.Small(
+                                                "Logging status",
+                                                className="text-muted d-block mb-1",
+                                            ),
+                                            html.P(
+                                                "Checked when Settings opens.",
+                                                id="diagnostics_status",
+                                                className="mb-0",
+                                            ),
+                                        ],
+                                        xs=12,
+                                        lg=4,
+                                    ),
+                                    dbc.Col(
+                                        [
+                                            dbc.Button(
+                                                "Download diagnostic logs",
+                                                id="download_diagnostics_btn",
+                                                disabled=True,
+                                                className="d-grid gap-2 col-10 mx-auto",
+                                            ),
+                                            dcc.Download(id="diagnostics_download"),
+                                        ],
+                                        xs=12,
+                                        lg=4,
+                                    ),
+                                ],
+                                id="diagnostics_row",
+                                className="g-3",
                                 align="center",
                             ),
                             width=12,

@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from src.components import get_barcode, get_table
-from src.error_handler import append_error, callback_with_error_queue,Result
+from src.error_handler import append_error, callback_with_error_queue, Result
 from src.barcode import BarcodePartition, get_barcode as get_valid_barcode, is_barcode
 from src.container import Container
 from src.database.data_connection import (
@@ -99,7 +99,7 @@ def get_transactions(trigger, barcode):
     barcode = get_barcode(barcode)
     user_barcodes = list(map(str, users["barcode"]))
     if not (str(barcode) in user_barcodes):
-        raise ValueError("User not found")
+        raise ValueError(f"User not found: {barcode}")
     transactions = get_trans()
     user_trans = transactions[transactions["barcode_user"] == str(barcode)].copy()
     if len(user_trans) == 0:
@@ -128,12 +128,20 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
     db = Container.get(Database)
     clear_barcode_open = (no_update, "", no_update)
     clear_barcode_close = (no_update, no_update, "")
+    raw_barcode_open = barcode_open
     barcode_open = get_barcode(barcode_open)
     if barcode_open == "bad barcode":
-        return Result(clear_barcode_open, ValueError("Invalid barcode"))
+        return Result(
+            clear_barcode_open,
+            ValueError(f"Invalid barcode: {raw_barcode_open!r}"),
+        )
+    raw_barcode_close = barcode_close
     barcode_close = get_barcode(barcode_close)
     if barcode_close == "bad barcode":
-        return Result(clear_barcode_close, ValueError("Invalid barcode"))
+        return Result(
+            clear_barcode_close,
+            ValueError(f"Invalid barcode: {raw_barcode_close!r}"),
+        )
     
     trigger = ctx.triggered_id
     if trigger == "new_trans_inp":
@@ -146,7 +154,10 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
         if int(barcode_open) in user_barcodes:
             user = users[users["barcode"] == int(barcode_open)].iloc[0]
             if int(user.get("paid_cents", 0)) > 0:
-                return Result(clear_barcode_open, ValueError("User has already paid"))
+                return Result(
+                    clear_barcode_open,
+                    ValueError(f"User has already paid: {barcode_open}"),
+                )
             reset_current_trans()
             return True, no_update, ""
         return clear_barcode_open #I couldn't provoke this branch when testing

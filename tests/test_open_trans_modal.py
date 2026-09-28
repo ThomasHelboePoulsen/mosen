@@ -114,7 +114,7 @@ def test_bad_barcode_open(monkeypatch, temp_db):
     assert res[1] == ""
     assert res[2] is no_update
     assert isinstance(res[3], list)
-    assert "Invalid barcode" in res[3][0]["msg"]
+    assert res[3][0]["msg"] == "Invalid barcode: 'xxx'"
 
 
 def test_bad_barcode_close(monkeypatch, temp_db):
@@ -133,7 +133,7 @@ def test_bad_barcode_close(monkeypatch, temp_db):
     assert res[1] is no_update
     assert res[2] == ""
     assert isinstance(res[3], list)
-    assert "Invalid barcode" in res[3][0]["msg"]
+    assert res[3][0]["msg"] == "Invalid barcode: 'close'"
 
 
 def test_no_users_exists(monkeypatch, temp_db):
@@ -251,7 +251,7 @@ def test_transaction_graph_unknown_user_adds_error(monkeypatch, temp_db):
     # Assert
     assert fig is no_update
     assert isinstance(error, list)
-    assert "User not found" in error[0]["msg"]
+    assert error[0]["msg"] == "User not found: 9999"
 
 
 def test_show_balance_with_bill_enabled_uses_only_selected_user_transactions(temp_db):
@@ -333,7 +333,7 @@ def test_paid_user_cannot_open_transaction_modal(monkeypatch, temp_db):
     assert res[1] == ""
     assert res[2] is no_update
     assert isinstance(res[3], list)
-    assert "already paid" in res[3][0]["msg"]
+    assert res[3][0]["msg"] == "User has already paid: 1234"
 
 
 def test_prod_barcode_success(monkeypatch, temp_db):

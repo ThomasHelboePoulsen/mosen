@@ -15,7 +15,12 @@ def on_cache_validation(_n, error_queue):
     try:
         changed = db.validate_cache_hashes()
     except Exception as e:
-        return append_error(error_queue, msg=f"Cache validation failed: {e}", src="cache")
+        return append_error(
+            error_queue,
+            msg=f"Cache validation failed: {e}",
+            src="cache",
+            error=e,
+        )
 
     if not changed:
         return no_update
