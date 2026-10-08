@@ -3,6 +3,7 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from src.database.data_connection import get_prods, get_trans, get_users
 from src.components import get_table
+from src.version import APP_VERSION
 
 USER_COLS = ["rank", "team"]
 DOCUMENTATION_URL = "https://thomashelboepoulsen.dk/mosen/docs"
@@ -233,6 +234,11 @@ def documentation_modal():
                     ),
                     html.P("Scan with your phone for the setup and admin guide.", className="mb-2"),
                     html.Div(DOCUMENTATION_URL, className="documentation-address"),
+                    html.P(
+                        f"App version: {APP_VERSION}",
+                        id="documentation_app_version",
+                        className="mt-3 mb-0 text-muted",
+                    ),
                 ],
                 className="text-center",
             ),

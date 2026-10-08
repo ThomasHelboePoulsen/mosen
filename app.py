@@ -12,7 +12,7 @@ Container.set(TopUserChartData, TopUserChartData())
 
 # Create the Dash app
 app = dash.Dash(
-    title="Mosemaskinen 4.0",
+    title="Mosemaskinen",
     # external_stylesheets=[dbc.themes.LITERA, dbc.icons.BOOTSTRAP],
     suppress_callback_exceptions=True,
 )

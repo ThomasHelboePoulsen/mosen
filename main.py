@@ -8,6 +8,7 @@ import pythonnet  # <---- Hook for .NET framework
 from src.main_layout import layout_func
 from app import app
 from src.diagnostics import configure_logging
+from src.version import APP_VERSION
 
 
 configure_logging()
@@ -34,7 +35,7 @@ if __name__ == "__main__":
     try:
         # Disable ways of closing the app
         print("Running....")
-        logger.info("application_started run_in_web=%s", run_in_web)
+        logger.info("application_started version=%s run_in_web=%s", APP_VERSION, run_in_web)
         k.block_key("alt")
         k.block_key("windows")
         h = windll.user32.FindWindowA(b"Shell_TrayWnd", None)
@@ -45,7 +46,7 @@ if __name__ == "__main__":
         else:
             threading.Thread(target=run_my_server, daemon=True).start()
             webview.create_window(
-                "Mosemaskinen",
+                app.title,
                 "http://127.0.0.1:8050",
                 fullscreen=True,
                 frameless=True,
