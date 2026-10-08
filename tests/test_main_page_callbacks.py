@@ -1,12 +1,14 @@
 import base64
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import io
 import sqlite3
 import types
 import zipfile
 
 import pytest
+import pandas as pd
 from dash import no_update
 
 from src import main_layout, main_page_callbacks
@@ -20,6 +22,47 @@ def _encoded_csv(csv):
     return "data:text/csv;base64," + base64.b64encode(
         csv.encode("utf-8")
     ).decode("ascii")
+
+
+def _user_row(barcode=1000, name="Alice", **optional_values):
+    return {"barcode": barcode, "name": name, "rank": "Member", "team": "A", **optional_values}
+
+
+def _users_csv(*rows):
+    return pd.DataFrame(rows).to_csv(index=False)
+
+
+def _database_rows(db):
+    return {
+        name: table.get_untyped().to_dict(orient="records")
+        for name, table in db.tables.items()
+    }
+
+
+@pytest.fixture
+def settings_upload(monkeypatch, tmp_path):
+    monkeypatch.setattr(main_page_callbacks, "BACKUP_DIR", str(tmp_path / "backups"))
+    context = types.SimpleNamespace(triggered_id=None)
+    monkeypatch.setattr(main_page_callbacks, "ctx", context)
+
+    def upload(content, filename="users.csv", table="users"):
+        context.triggered_id = {"index": table, "type": "database_upload"}
+        tables = ["users", "prods", "transactions"]
+        index = tables.index(table)
+        uploads = [None] * 3
+        filenames = [None] * 3
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        uploads[index] = (
+            "data:application/octet-stream;base64," + base64.b64encode(content).decode("ascii")
+        )
+        filenames[index] = filename
+        return main_page_callbacks.update_settings(
+            None, True, uploads, [{"index": name} for name in tables],
+            "equal_all", 75, "pw", filenames, [],
+        )
+
+    return upload
 
 
 def _find_component(component, component_id):
@@ -486,156 +529,330 @@ def test_transaction_removal_revision_refreshes_settings_layouts(
     assert result == (marker, marker, marker)
 
 
-def test_successful_import_commits_settings_and_data_after_backup(
-    monkeypatch, tmp_path, temp_db
+@pytest.mark.parametrize("filename", ["users.csv", "USERS.CSV"])
+def test_first_user_import_commits_settings_and_data_after_backup(
+    settings_upload, tmp_path, temp_db, filename
 ):
-    """Document the intended success path: backup first, then commit settings/import."""
+    # Arrange / Act
+    result = settings_upload(_users_csv(_user_row()), filename=filename)
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    user = temp_db._user_table.get().iloc[0]
+    assert user["name"] == "Alice"
+    assert user[["is_guest", "waste_cents", "paid_cents"]].tolist() == [0, -1, 0]
+    assert temp_db.settings.iloc[0]["password"] == "pw"
+
+    backups = list((tmp_path / "backups").glob("*_pre_import_*.db"))
+    assert len(backups) == 1
+    with closing(sqlite3.connect(backups[0])) as con:
+        assert con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(
+    "table, filename, content, message",
+    [
+        pytest.param("users", "backup.db", b"SQLite format 3\0", "Upload a CSV file", id="users-db"),
+        pytest.param("prods", "backup.db", b"SQLite format 3\0", "Upload a CSV file", id="products-db"),
+        pytest.param("transactions", "backup.db", b"SQLite format 3\0", "Upload a CSV file", id="transactions-db"),
+        pytest.param("users", "users.txt", b"barcode,name,rank,team\n", "Upload a CSV file", id="wrong-extension"),
+        pytest.param("users", None, b"barcode,name,rank,team\n", "Upload a CSV file", id="missing-filename"),
+        pytest.param("users", "users.csv", b"SQLite format 3\0", "Cannot read users.csv as CSV", id="renamed-db"),
+        pytest.param("users", "users.csv", b"\xff", "Cannot read users.csv as CSV", id="invalid-utf8"),
+        pytest.param(
+            "users", "users.csv", b'barcode,name\n1000,"unfinished\n',
+            "Cannot read users.csv as CSV", id="malformed-csv",
+        ),
+        pytest.param("users", "users.csv", b"", "Cannot read users.csv as CSV", id="empty-file"),
+        pytest.param("users", "users.csv", b"Not a table export\n", "missing required columns", id="missing-headers"),
+    ],
+)
+def test_invalid_upload_reports_clear_error_without_changing_data(
+    settings_upload, tmp_path, temp_db, table, filename, content, message
+):
     # Arrange
-    backup_dir = tmp_path / "backups"
-    monkeypatch.setattr(main_page_callbacks, "BACKUP_DIR", str(backup_dir))
-    monkeypatch.setattr(
-        main_page_callbacks,
-        "ctx",
-        types.SimpleNamespace(triggered_id={"index": "users", "type": "database_upload"}),
-    )
-    temp_db.upload_values(
-        [
-            {
-                "barcode": "1000",
-                "name": "Original User",
-                "rank": "Member",
-                "team": "A",
-            }
-        ],
-        "users",
-    )
-    csv = "barcode,name,rank,team\n1001,Imported User,Member,B\n"
-    encoded_csv = _encoded_csv(csv)
+    _load_transaction_data(temp_db)
+    before = _database_rows(temp_db)
 
     # Act
-    result = main_page_callbacks.update_settings.__wrapped__(
-        None,
-        True,
-        [encoded_csv, None, None],
+    result = settings_upload(content, filename=filename, table=table)
+
+    # Assert
+    assert result[:5] == (no_update, no_update, True, [no_update] * 3, no_update)
+    assert message in result[5][0]["msg"]
+    assert _database_rows(temp_db) == before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize(
+    "column, stored_value, changed_value",
+    [("is_guest", 1, 0), ("waste_cents", 450, 600), ("paid_cents", 2500, 900)],
+)
+@pytest.mark.parametrize("form", ["omitted", "blank", "changed"])
+def test_user_reimport_cannot_overwrite_non_default_optional_values(
+    settings_upload, tmp_path, temp_db, column, stored_value, changed_value, form
+):
+    # Arrange
+    temp_db.upload_values_raises([_user_row(**{column: stored_value})], "users")
+    before = _database_rows(temp_db)
+    imported_user = _user_row(name="Changed User")
+    if form != "omitted":
+        imported_user[column] = None if form == "blank" else changed_value
+
+    # Act
+    result = settings_upload(_users_csv(imported_user))
+
+    # Assert
+    assert result[:5] == (no_update, no_update, True, [no_update] * 3, no_update)
+    assert "would overwrite non-default values" in result[5][0]["msg"]
+    assert column in result[5][0]["msg"]
+    assert "1000" in result[5][0]["msg"]
+    assert _database_rows(temp_db) == before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize(
+    "stored, imported, expected",
+    [
+        pytest.param([0, -1, 0], {}, [0, -1, 0], id="omitted-defaults"),
+        pytest.param(
+            [0, -1, 0], dict(is_guest=None, waste_cents=None, paid_cents=None),
+            [0, -1, 0], id="blank-defaults",
+        ),
+        pytest.param(
+            [0, -1, 0], dict(is_guest=1, waste_cents=1200, paid_cents=900),
+            [1, 1200, 900], id="change-defaults",
+        ),
+        pytest.param(
+            [1, 450, 0], dict(is_guest=1, waste_cents=450, paid_cents=2500),
+            [1, 450, 2500], id="change-only-default",
+        ),
+        pytest.param(
+            [1, 450, 2500], dict(is_guest=1, waste_cents=450, paid_cents=2500),
+            [1, 450, 2500], id="matching-values",
+        ),
+        pytest.param(
+            [1, 450, 2500], dict(is_guest=1.0, waste_cents=450.0, paid_cents=2500.0),
+            [1, 450, 2500], id="matching-floats",
+        ),
+        pytest.param([0, 450, 2500], dict(waste_cents=450, paid_cents=2500), [0, 450, 2500], id="omit-default-guest"),
+        pytest.param([1, -1, 2500], dict(is_guest=1, paid_cents=2500), [1, -1, 2500], id="omit-default-waste"),
+        pytest.param([1, 450, 0], dict(is_guest=1, waste_cents=450), [1, 450, 0], id="omit-default-payment"),
+    ],
+)
+def test_user_reimport_allows_defaults_and_matching_values(
+    settings_upload, temp_db, stored, imported, expected
+):
+    # Arrange
+    columns = ["is_guest", "waste_cents", "paid_cents"]
+    temp_db.upload_values_raises([_user_row(**dict(zip(columns, stored)))], "users")
+
+    # Act
+    result = settings_upload(_users_csv(_user_row(name="Changed User", **imported)))
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    user = temp_db._user_table.get().iloc[0]
+    assert user["name"] == "Changed User"
+    assert user[columns].tolist() == expected
+
+
+@pytest.mark.parametrize("include_optional", [False, True])
+def test_user_reimport_matches_by_barcode_when_adding_and_removing_users(
+    settings_upload, temp_db, include_optional
+):
+    # Arrange: only Alice has purchases; unpaid Bob can be removed.
+    _load_transaction_data(temp_db)
+    optional = dict(is_guest=1, waste_cents=450, paid_cents=2500) if include_optional else {}
+    temp_db.upload_values_raises([_user_row(**optional)], "users")
+    temp_db._user_table.append([_user_row(1001, "Bob", is_guest=1, waste_cents=200)])
+    transactions_before = temp_db.transactions.to_dict(orient="records")
+
+    # Act: a new row first also checks that matching is independent of row order.
+    result = settings_upload(_users_csv(
+        _user_row(1002, "New User"), _user_row(name="Renamed Alice", **optional)
+    ))
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    users = temp_db._user_table.get().set_index("barcode")
+    columns = ["is_guest", "waste_cents", "paid_cents"]
+    assert set(users.index) == {1000, 1002}
+    assert users.loc[1000, "name"] == "Renamed Alice"
+    assert users.loc[1000, columns].tolist() == ([1, 450, 2500] if include_optional else [0, -1, 0])
+    assert users.loc[1002, columns].tolist() == [0, -1, 0]
+    assert temp_db.transactions.to_dict(orient="records") == transactions_before
+
+
+def test_user_reimport_cannot_swap_non_default_values_between_barcodes(
+    settings_upload, tmp_path, temp_db
+):
+    # Arrange
+    temp_db.upload_values_raises([
+        _user_row(is_guest=1, waste_cents=450, paid_cents=2500),
+        _user_row(1001, "Bob", is_guest=0, waste_cents=-1, paid_cents=900),
+    ], "users")
+    before = _database_rows(temp_db)
+
+    # Act: the same values are present, but assigned to the wrong barcodes.
+    result = settings_upload(_users_csv(
+        _user_row(1001, "Bob", is_guest=1, waste_cents=450, paid_cents=2500),
+        _user_row(is_guest=0, waste_cents=-1, paid_cents=900),
+    ))
+
+    # Assert
+    assert "would overwrite non-default values" in result[5][0]["msg"]
+    assert "1000" in result[5][0]["msg"]
+    assert "1001" in result[5][0]["msg"]
+    assert _database_rows(temp_db) == before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize("include_optional", [False, True])
+@pytest.mark.parametrize(
+    "paid_cents, has_purchase, message",
+    [
+        pytest.param(0, True, "transactions", id="purchases"),
+        pytest.param(1, False, "recorded early payments", id="paid-early"),
+    ],
+)
+def test_user_import_cannot_remove_users_with_purchases_or_payments(
+    settings_upload, tmp_path, temp_db, include_optional, paid_cents, has_purchase, message
+):
+    # Arrange: keep Alice and attempt to remove Bob.
+    _load_transaction_data(temp_db)
+    temp_db._user_table.append([_user_row(1001, "Bob", paid_cents=paid_cents)])
+    if has_purchase:
+        temp_db._transaction_table.append([{
+            "barcode_user": 1001, "barcode_prod": 101, "timestamp": "26/07/2026 11:00:00",
+        }])
+    before = _database_rows(temp_db)
+    optional = dict(is_guest=0, waste_cents=-1, paid_cents=0) if include_optional else {}
+
+    # Act
+    result = settings_upload(_users_csv(
+        _user_row(name="Renamed Alice", **optional),
+        _user_row(1002, "New User", **optional),
+    ))
+
+    # Assert: reject all changes and keep Bob's payment persisted.
+    assert result[:5] == (no_update, no_update, True, [no_update] * 3, no_update)
+    assert f"removes users with {message}" in result[5][0]["msg"]
+    assert _database_rows(temp_db) == before
+    with closing(sqlite3.connect(temp_db.data_file)) as con:
+        assert con.execute(
+            "SELECT paid_cents FROM users WHERE barcode = 1001"
+        ).fetchone() == (paid_cents,)
+    assert not (tmp_path / "backups").exists()
+
+
+def test_empty_user_import_leaves_existing_users_untouched(
+    settings_upload, tmp_path, temp_db
+):
+    # Arrange
+    _load_transaction_data(temp_db)
+    users_before = temp_db.users.to_dict(orient="records")
+
+    # Act
+    result = settings_upload("barcode,name,rank,team\n")
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    assert temp_db.users.to_dict(orient="records") == users_before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize(
+    "table_name, changed_column, expected_value",
+    [("prods", "name", "Changed Product"), ("transactions", "timestamp", "26/07/2026 11:00:00")],
+)
+def test_other_table_import_ignores_stale_user_upload(
+    monkeypatch, tmp_path, temp_db, table_name, changed_column, expected_value
+):
+    # Arrange
+    _load_transaction_data(temp_db)
+    other_table = "transactions" if table_name == "prods" else "prods"
+    before = _database_rows(temp_db)
+    monkeypatch.setattr(main_page_callbacks, "BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setattr(main_page_callbacks, "ctx", types.SimpleNamespace(
+        triggered_id={"index": table_name, "type": "database_upload"}
+    ))
+    uploads = [
+        _encoded_csv(_users_csv(_user_row(name="Stale User"))),
+        _encoded_csv("barcode,name,price,category,current_stock,initial_stock\n101,Changed Product,12,Drinks,8,10\n"),
+        _encoded_csv("barcode_user,barcode_prod,timestamp\n1000,101,26/07/2026 11:00:00\n"),
+    ]
+
+    # Act
+    result = main_page_callbacks.update_settings(
+        None, True, uploads,
         [{"index": "users"}, {"index": "prods"}, {"index": "transactions"}],
-        "equal_category_purchasers",
-        50,
-        "pw",
+        "equal_all", 75, "pw", ["users.csv", "prods.csv", "transactions.csv"], [],
     )
 
     # Assert
-    assert result.error is None
-    assert result.values[0] is True
-    assert result.values[2] is False
-    assert Container.get(Database).users.iloc[0]["name"] == "Imported User"
-    assert Container.get(Database).settings.iloc[0]["password"] == "pw"
-
-    backups = list(backup_dir.glob("*_pre_import_*.db"))
-    assert len(backups) == 1
-    con = sqlite3.connect(backups[0])
-    try:
-        backed_up_user = con.execute("SELECT name FROM users").fetchone()[0]
-    finally:
-        con.close()
-    assert backed_up_user == "Original User"
+    assert result[2] is False
+    assert result[5] is no_update
+    after = _database_rows(temp_db)
+    assert after["users"] == before["users"]
+    assert after[other_table] == before[other_table]
+    assert after[table_name][0][changed_column] == expected_value
+    assert len(list((tmp_path / "backups").glob("*_pre_import_*.db"))) == 1
 
 
 def test_non_upload_settings_trigger_does_not_reimport_stale_upload(
     monkeypatch, tmp_path, temp_db
 ):
-    """Document the intended trigger behavior: upload contents are used only on upload."""
     # Arrange
-    backup_dir = tmp_path / "backups"
-    monkeypatch.setattr(main_page_callbacks, "BACKUP_DIR", str(backup_dir))
+    monkeypatch.setattr(main_page_callbacks, "BACKUP_DIR", str(tmp_path / "backups"))
     monkeypatch.setattr(
-        main_page_callbacks,
-        "ctx",
-        types.SimpleNamespace(triggered_id="confirm_new_password"),
+        main_page_callbacks, "ctx", types.SimpleNamespace(triggered_id="confirm_new_password")
     )
-    temp_db.upload_values(
-        [
-            {
-                "barcode": "1000",
-                "name": "Original User",
-                "rank": "Member",
-                "team": "A",
-            }
-        ],
-        "users",
-    )
-    stale_upload = _encoded_csv("barcode,name,rank,team\n1001,Imported User,Member,B\n")
+    temp_db.upload_values_raises([_user_row(name="Original User")], "users")
+    stale_upload = _encoded_csv(_users_csv(_user_row(1001, "Imported User")))
 
     # Act
     result = main_page_callbacks.update_settings.__wrapped__(
-        1,
-        True,
-        [stale_upload, None, None],
+        1, True, [stale_upload, None, None],
         [{"index": "users"}, {"index": "prods"}, {"index": "transactions"}],
-        "equal_category_purchasers",
-        50,
-        "pw",
+        "equal_category_purchasers", 50, "pw", ["users.csv", "prods.csv", "transactions.csv"],
     )
 
     # Assert
     assert result.error is None
     assert result.values[-1] is True
-    assert Container.get(Database).users.iloc[0]["name"] == "Original User"
-    assert not backup_dir.exists()
+    assert temp_db.users.iloc[0]["name"] == "Original User"
+    assert not (tmp_path / "backups").exists()
 
 
 def test_failed_import_rolls_back_changes_but_keeps_pre_import_backup(
-    monkeypatch, tmp_path, temp_db
+    settings_upload, tmp_path, temp_db
 ):
-    """Document the intended failure path: rollback DB changes, keep the safety copy."""
     # Arrange
-    backup_dir = tmp_path / "backups"
-    monkeypatch.setattr(main_page_callbacks, "BACKUP_DIR", str(backup_dir))
-    monkeypatch.setattr(
-        main_page_callbacks,
-        "ctx",
-        types.SimpleNamespace(triggered_id={"index": "users", "type": "database_upload"}),
-    )
-    temp_db.upload_values(
-        [
-            {
-                "barcode": "1000",
-                "name": "Original User",
-                "rank": "Member",
-                "team": "A",
-            }
-        ],
-        "users",
-    )
-    invalid_upload = _encoded_csv("barcode,name,rank,team\n999,Bad User,Member,B\n")
+    before = _database_rows(temp_db)
+    invalid_csv = _users_csv(_user_row(999, "Bad User"))
 
     # Act
-    result = main_page_callbacks.update_settings.__wrapped__(
-        None,
-        False,
-        [invalid_upload, None, None],
-        [{"index": "users"}, {"index": "prods"}, {"index": "transactions"}],
-        "equal_all",
-        50,
-        "pw",
-    )
+    result = settings_upload(invalid_csv)
 
     # Assert
-    assert result.error is None
-    assert result.values[2] is True
-    assert Container.get(Database).users.iloc[0]["name"] == "Original User"
-    assert Container.get(Database).settings.iloc[0]["password"] == "OLProgram"
-    assert Container.get(Database).settings.iloc[0]["waste_strategy"] == (
-        "equal_category_purchasers"
-    )
-
-    backups = list(backup_dir.glob("*_pre_import_*.db"))
+    assert result[2] is True
+    assert result[5] is no_update
+    assert _database_rows(temp_db) == before
+    backups = list((tmp_path / "backups").glob("*_pre_import_*.db"))
     assert len(backups) == 1
-    con = sqlite3.connect(backups[0])
-    try:
-        backed_up_user = con.execute("SELECT name FROM users").fetchone()[0]
-    finally:
-        con.close()
-    assert backed_up_user == "Original User"
+    with closing(sqlite3.connect(backups[0])) as con:
+        assert con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+
+    # A failed first import must still allow a corrected file.
+    retry = settings_upload(_users_csv(_user_row(name="Corrected User")))
+    assert retry[2] is False
+    assert retry[5] is no_update
+    assert temp_db.users.iloc[0]["name"] == "Corrected User"
 
 
 def test_export_barcodes_returns_zip_with_pdfs_and_complete_label_report(temp_db):

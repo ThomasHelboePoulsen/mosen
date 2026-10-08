@@ -37,6 +37,7 @@ from src.barcode_generator import (
 from src.error_handler import append_error, callback_with_error_queue
 from src.container import Container
 from src.database.data_connection import Database
+from src.database.tables.user import UserTable
 from src.analytics.overview_plot import create_overview
 from src.analytics.bar_chart_format import format_count_bar_chart
 from src.components import get_tooltip_data
@@ -46,6 +47,7 @@ from src.diagnostics import (
 )
 
 import base64
+import binascii
 import io
 import shutil
 import os
@@ -266,6 +268,108 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     return create_overview(graph_col, average)
 
 
+def parse_csv_upload(contents: str, filename: str | None) -> pd.DataFrame:
+    if not filename or not filename.lower().endswith(".csv"):
+        raise ValueError(
+            "Upload a CSV file (.csv). Database backups (.db) cannot be imported here."
+        )
+    try:
+        _, encoded = contents.split(",", 1)
+        content = base64.b64decode(encoded, validate=True)
+        if b"\x00" in content:
+            raise ValueError("Binary file contents")
+        return pd.read_csv(io.StringIO(content.decode("utf-8-sig")))
+    except (ValueError, binascii.Error) as error:
+        raise ValueError(
+            f"Cannot read {filename} as CSV. Upload a valid UTF-8 CSV file."
+        ) from error
+
+
+def validate_user_import(imported_users: pd.DataFrame) -> None:
+    """Allow additions and edits while protecting existing trip data.
+
+    Users with purchases or early payments must remain in the import.
+    Existing non-default optional values must match for the same barcode.
+    """
+    if "barcode" not in imported_users.columns:
+        return  # Required-column validation is handled by the table.
+
+    db = Container.get(Database)
+    user_table = db._user_table
+    existing_users = user_table.get()
+    imported_barcodes = pd.to_numeric(imported_users["barcode"], errors="coerce")
+
+    users_to_remove = existing_users[
+        ~existing_users["barcode"].isin(imported_barcodes)
+    ]
+    _validate_user_removals(users_to_remove, db._transaction_table.get())
+    _validate_optional_user_values(
+        imported_users, imported_barcodes, existing_users, user_table
+    )
+
+
+def _validate_user_removals(
+    users_to_remove: pd.DataFrame, transactions: pd.DataFrame
+) -> None:
+    """Prevent imports from deleting users with purchases or early payments."""
+    has_purchases = users_to_remove["barcode"].isin(transactions["barcode_user"]).any()
+    if has_purchases:
+        raise ValueError(
+            "Cannot import users because the file removes users with transactions. "
+            "Keep those users in the CSV file or remove their transactions first."
+        )
+
+    has_early_payments = users_to_remove["paid_cents"].ne(0).any()
+    if has_early_payments:
+        raise ValueError(
+            "Cannot import users because the file removes users with recorded early payments. "
+            "Keep those users in the CSV file or remove their early payments first."
+        )
+
+
+def _validate_optional_user_values(
+    imported_users: pd.DataFrame,
+    imported_barcodes: pd.Series,
+    existing_users: pd.DataFrame,
+    user_table: UserTable,
+) -> None:
+    """Allow default values to change; preserve every existing non-default value."""
+    # Missing columns and blank cells get the same defaults as an actual import.
+    imported_with_defaults = pd.DataFrame([
+        user_table._fill_optional_defaults(row)
+        for row in imported_users.to_dict(orient="records")
+    ])
+    existing_by_barcode = existing_users.set_index("barcode")
+    unsafe_columns = []
+    unsafe_barcodes = set()
+    for column in user_table.columns:
+        if column.required:
+            continue
+
+        # Match import rows to saved values by barcode. New users have no saved value.
+        stored_values = imported_barcodes.map(existing_by_barcode[column.name])
+        imported_values = pd.to_numeric(
+            imported_with_defaults[column.name], errors="coerce"
+        )
+        is_existing_user = stored_values.notna()
+        has_non_default_value = stored_values.ne(column.default)
+        value_would_change = stored_values.ne(imported_values)
+        would_overwrite = is_existing_user & has_non_default_value & value_would_change
+
+        if would_overwrite.any():
+            unsafe_columns.append(column.name)
+            unsafe_barcodes.update(imported_barcodes[would_overwrite].astype(int))
+    if unsafe_columns:
+        barcodes = ", ".join(str(barcode) for barcode in sorted(unsafe_barcodes)[:5])
+        if len(unsafe_barcodes) > 5:
+            barcodes += ", ..."
+        raise ValueError(
+            "Cannot import users because it would overwrite non-default values "
+            f"in columns: {', '.join(unsafe_columns)} for barcodes: {barcodes}. "
+            "Export the current users and edit the CSV file before importing."
+        )
+
+
 @callback_with_error_queue(5,
     Output("update_settings", "data"),
     Output("bad_password_alert", "is_open"),
@@ -279,6 +383,7 @@ def update_overview_graph(trans_modal_open, graph_col, average):
     Input("waste_strategy", "value"),
     Input("bill_preview_waste_extra_percent", "value"),
     State("settings_password", "value"),
+    State({"index": ALL, "type": "database_upload"}, "filename"),
 )
 @db_transaction_result
 def update_settings(
@@ -289,6 +394,7 @@ def update_settings(
     waste_strategy,
     bill_preview_waste_extra_percent,
     password,
+    filenames,
 ):
     if (trigger := ctx.triggered_id) is None:
         return None, no_update, no_update, [no_update] * 3, no_update
@@ -302,13 +408,30 @@ def update_settings(
     import_triggered = isinstance(trigger, dict) and trigger.get("type") == "database_upload"
     if import_triggered:
         for i, table in enumerate(db_tables):
-            if table is None:
+            if table is None or table_ids[i]["index"] != trigger.get("index"):
                 continue
-            _, content_string = table.split(",")
-            content = base64.b64decode(content_string)
-            df = pd.read_csv(io.StringIO(content.decode("utf-8")))
+            table_name = table_ids[i]["index"]
+            try:
+                df = parse_csv_upload(table, filenames[i])
+                missing_columns = [
+                    column.name for column in db.get_table(table_name).columns
+                    if column.required and column.name not in df.columns
+                ]
+                if missing_columns:
+                    raise ValueError(
+                        f"CSV for {table_name} is missing required columns: "
+                        f"{', '.join(missing_columns)}."
+                    )
+                if len(df) > 0 and table_name == "users":
+                    validate_user_import(df)
+            except ValueError as error:
+                return TransactionResult(
+                    (no_update, no_update, True, [no_update] * 3, no_update),
+                    error=error,
+                    commit=False,
+                )
             if len(df) > 0:
-                imports.append((i, df, table_ids[i]["index"]))
+                imports.append((i, df, table_name))
 
     if imports:
         create_database_backup(db.data_file, label="pre_import")
