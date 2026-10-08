@@ -5,6 +5,7 @@ from src.database.data_connection import get_prods, get_trans, get_users
 from src.components import get_table
 
 USER_COLS = ["rank", "team"]
+DOCUMENTATION_URL = "https://thomashelboepoulsen.dk/mosen/docs"
 
 user_body = [
     dbc.Input(
@@ -202,13 +203,45 @@ def password_modal():
                 )
             ),
             dbc.ModalFooter(
-                dbc.Row([dbc.Col(dbc.Button("Confirm", id="confirm_password"))])
+                [
+                    dbc.Button(
+                        "Documentation",
+                        id="open_documentation",
+                        color="secondary",
+                        className="me-auto",
+                    ),
+                    dbc.Button("Confirm", id="confirm_password"),
+                ]
             ),
         ],
         size="md",
         id="password_modal",
     )
     return mdl
+
+
+def documentation_modal():
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Documentation")),
+            dbc.ModalBody(
+                [
+                    html.Img(
+                        src="assets/documentation-qr.png",
+                        alt="QR code for the Mosen documentation",
+                        className="documentation-qr",
+                    ),
+                    html.P("Scan with your phone for the setup and admin guide.", className="mb-2"),
+                    html.Div(DOCUMENTATION_URL, className="documentation-address"),
+                ],
+                className="text-center",
+            ),
+        ],
+        id="documentation_modal",
+        is_open=False,
+        centered=True,
+        size="md",
+    )
 
 
 def export_payments_modal():

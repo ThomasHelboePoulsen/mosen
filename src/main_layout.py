@@ -21,6 +21,7 @@ from src.modals import (
     new_prod_modal,
     update_stock_modal,
     password_modal,
+    documentation_modal,
     export_payments_modal,
     remove_transaction_modal,
     bad_rows_mdl,
@@ -828,12 +829,14 @@ def layout_func():
             settings_mode_func(),
             trans_modal(),
             password_modal(),
+            documentation_modal(),
             edit_modal(),
             top_user_chart_modal(),
             dcc.Store(id="update_settings"),
             dcc.Store(id="transaction_removal_revision"),
             dcc.Store(id="retain_focus_main", data=None),
             dcc.Store(id="retain_focus_prod", data=None),
+            dcc.Store(id="retain_focus_password", data=None),
             dcc.Interval(
                 id="backup_interval",
                 interval=get_backup_interval_ms(),
@@ -988,6 +991,20 @@ def update_settings_layout(
         product_settings_layout(),
         transaction_settings_layout(),
     )
+
+
+@callback(
+    Output("documentation_modal", "is_open"),
+    Input("open_documentation", "n_clicks"),
+    Input("password_modal", "is_open"),
+    prevent_initial_call=True,
+)
+def toggle_documentation(open_clicks, password_open):
+    if not password_open:
+        return False
+    if ctx.triggered_id == "open_documentation" and open_clicks:
+        return True
+    return no_update
 
 
 @callback(

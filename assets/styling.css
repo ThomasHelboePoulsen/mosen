@@ -71,6 +71,21 @@ h1 {
     width: 83vw;
 }
 
+.documentation-qr {
+    display: block;
+    width: 246px;
+    max-width: 100%;
+    height: auto;
+    margin: 8px auto 20px;
+}
+
+.documentation-address {
+    color: #ced4da;
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
 .show_box hr {
     height: 2px;
     width: 97%;

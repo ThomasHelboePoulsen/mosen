@@ -21,6 +21,28 @@ app = dash.Dash(
 
 dash.clientside_callback(
     """
+    function(documentationOpen, passwordOpen) {
+        if (!documentationOpen && passwordOpen) {
+            // Wait for the closing fade and the modal's own focus restoration.
+            window.setTimeout(function() {
+                const input = document.getElementById("password_input");
+                if (input && input.closest(".modal.show") &&
+                    !document.getElementById("documentation_modal")) {
+                    input.focus();
+                }
+            }, 350);
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    dash.Output("retain_focus_password", "data"),
+    dash.Input("documentation_modal", "is_open"),
+    dash.State("password_modal", "is_open"),
+    prevent_initial_call=True,
+)
+
+dash.clientside_callback(
+    """
     function(trig, newT, settings, password) {
         if (newT && !settings && !password) {
             document.getElementById("prod_barcode").focus();
