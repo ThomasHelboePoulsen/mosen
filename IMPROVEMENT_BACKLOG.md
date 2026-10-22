@@ -35,7 +35,7 @@ Code locations below use file paths and function names. Function names are the p
 | 03 | ~~Protect early payments during direct user deletion~~ | Small | **Done** |
 | 04 | ~~Remove optional payment-export rounding~~ | Small | **Done** |
 | 05 | ~~Prevent product imports from removing purchased products~~ | Small | **Done** |
-| 06 | Preserve the visible basket after failed checkout | Small to medium | Confirmed bug |
+| 06 | ~~Preserve the visible basket after failed checkout~~ | Small to medium | **Done** |
 | 07 | Clear stale edit state on Create and Cancel | Small to medium | Confirmed user bug; analogous product path |
 | 08 | Validate numeric values before table replacement | Medium | Confirmed bug in shared table logic |
 | 09 | Refresh settings after successful changes | Medium | Confirmed callback/design issue |
@@ -147,7 +147,7 @@ Code locations below use file paths and function names. Function names are the p
 
 ## 06. Preserve the visible basket after failed checkout
 
-**Status:** Open. **Evidence:** A forced checkout failure preserved a pending database item but left only the "Products:" heading on screen.
+**Status:** Done (22 October 2026). **Evidence:** Before the fix, callback regressions reproduced the display clearing for forced append and basket-clear failures in both callback orders, while pending purchases remained in the database.
 
 **Issue:** The basket modal stays open and the red error appears, but the product list looks empty despite products still being pending.
 
@@ -155,11 +155,17 @@ Code locations below use file paths and function names. Function names are the p
 
 **Cause:** Scanning the user's barcode triggers both checkout and `new_trans()`. The latter clears the displayed list independently of checkout success.
 
-**Proposed change:** Preserve the displayed products when the user barcode is submitted. Clear the display only after successful checkout or successful opening of a fresh basket. Coordinate that reset with the callback that owns those successful transitions, while preserving existing rollback and duplicate-checkout protection.
+**Chosen change:** Render the reset cached basket in the opener and return its contents together with the open flag. Preserve the display during checkout and when the modal closes. Refreshing from a callback triggered after opening briefly exposed the previous basket, as reported during manual use; supplying both properties in one response removes that intermediate state. Preserve existing rollback and duplicate-checkout protection.
 
 **Where:** `src/trans_layout.py`: `new_trans()`, `open_trans_modal()`, `checkout_cart_to()`.
 
-**Acceptance:** Forced append/clear failures preserve the open modal, visible names/counts and database basket, and show the error. Retrying records each item once. A fresh basket has an empty display. Relevant tests: `tests/test_open_trans_modal.py`, `tests/test_transaction_rollback_behavior.py`; check both callbacks, not just database rollback.
+**Acceptance:** Forced append/clear failures preserve the open modal, visible names/counts and database basket, and show the error. Retrying records each item once. The fresh basket's contents arrive in the same response that opens the modal, without a later display callback. Relevant tests: `tests/test_open_trans_modal.py`, `tests/test_transaction_rollback_behavior.py`; check both callbacks, not just database rollback.
+
+**Implemented:** `open_trans_modal()` renders the cached basket after a successful reset and returns it with `is_open=True` as a fourth normal output. This uses Dash's duplicate-output pattern; checkout, validation and error paths leave the displayed contents unchanged. Product scans reuse the same rendering helper in `new_trans()`, and user checkout scans preserve the display. The modal's open flag is now a `State` of that callback, so opening/closing does not trigger a display update or delay product scans behind the modal callback. Scans received while the modal is closed return `no_update` before validating barcode state. Existing checkout transactions, rollback and duplicate-checkout protection are unchanged.
+
+**Verification:** `.\.venv\Scripts\python.exe -m pytest -q --ignore=tests/test_barcode_scan_performance.py` passed **404 tests**, including eleven new cases covering append/clear failures, preserved visible names/counts and stored rows, retry without duplicate purchases, zero-padded checkout barcodes, fresh opening/reset failure, product scans/multipliers/removal, reset-before-render ordering, fresh contents in the opening response, and scans after closing. Separately, all **12 barcode performance tests** passed their existing limits, with opening display work included in the opener and product callbacks running concurrently. An isolated temporary-database Dash app passed real HTTP checks with a deliberately delayed renderer: fresh basket children and `is_open=True` were supplied in the same response. Dependency checks confirmed that modal opening no longer triggers `new_trans()`, and scan/checkout/close/reopen responses remained correct. Independent read-only review found no blocking issues. Timing tests measure server callbacks, excluding browser/HTTP latency; visual frame/scanner verification remains unperformed because no browser controls were available. Tests used the local venv with escalated execution because its Windows launcher could not start in the sandbox.
+
+**Test cleanup:** Reduced the added block from 211 to 59 lines across five direct tests. Append/clear failure and retry checks now share the existing checkout-failure test. The focused command `.\.venv\Scripts\python.exe -m pytest -q tests/test_open_trans_modal.py tests/test_transaction_rollback_behavior.py` passed **38 tests** after cleanup. The full-suite and performance results above predate this test-only cleanup.
 
 ## 07. Clear stale edit state on Create and Cancel
 

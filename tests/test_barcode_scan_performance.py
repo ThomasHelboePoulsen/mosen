@@ -25,7 +25,7 @@ OPEN_WORKFLOW_LIMIT_SECONDS = 0.3
 PRODUCT_SCAN_WORKFLOW_LIMIT_SECONDS = 0.1
 SUBMIT_WORKFLOW_LIMIT_SECONDS = 0.4
 CHECKOUT_PHASE_LIMIT_SECONDS = 0.15
-CART_RESET_PHASE_LIMIT_SECONDS = 0.1
+CHECKOUT_SCAN_PHASE_LIMIT_SECONDS = 0.1
 OVERVIEW_PHASE_LIMIT_SECONDS = 0.2
 OVERVIEW_DB_READS_PHASE_LIMIT_SECONDS = 0.1
 OVERVIEW_DATA_PHASE_LIMIT_SECONDS = 0.1
@@ -301,7 +301,7 @@ def _open_basket(monkeypatch, user_barcode=USER_BARCODE):
 
 def _scan_product(monkeypatch, product_barcode=PRODUCT_BARCODE, user_barcode=USER_BARCODE):
     _set_trans_trigger(monkeypatch, "prod_barcode")
-    return trans_layout.new_trans(1, product_barcode, user_barcode, [])
+    return trans_layout.new_trans(1, True, product_barcode, user_barcode, [])
 
 
 def _submit_basket(monkeypatch, user_barcode=USER_BARCODE):
@@ -309,9 +309,9 @@ def _submit_basket(monkeypatch, user_barcode=USER_BARCODE):
     return trans_layout.open_trans_modal(None, 1, user_barcode, user_barcode, [])
 
 
-def _reset_cart_display(monkeypatch, user_barcode=USER_BARCODE):
+def _handle_checkout_scan(monkeypatch, user_barcode=USER_BARCODE):
     _set_trans_trigger(monkeypatch, "prod_barcode")
-    return trans_layout.new_trans(1, user_barcode, user_barcode, [])
+    return trans_layout.new_trans(1, False, user_barcode, "", [])
 
 
 def _refresh_overview(monkeypatch, graph_col="rank", average=False):
@@ -375,18 +375,11 @@ def _product_scan_workflow(
         _set_trans_trigger(monkeypatch, "prod_barcode")
     return _run_concurrently(
         {
-            "add_product": lambda: trans_layout.new_trans(
-                1,
-                product_barcode,
-                USER_BARCODE,
-                [],
-            ),
             "close_guard": lambda: trans_layout.open_trans_modal(
-                None,
-                1,
-                USER_BARCODE,
-                product_barcode,
-                [],
+                None, 1, USER_BARCODE, product_barcode, []
+            ),
+            "add_product": lambda: trans_layout.new_trans(
+                1, True, product_barcode, USER_BARCODE, []
             ),
         }
     )
@@ -396,7 +389,7 @@ def _submit_purchase_workflow(monkeypatch, graph_col="rank", average=False):
     checkout_result = _submit_basket(monkeypatch)
     downstream_results, downstream_errors, _ = _run_concurrently(
         {
-            "cart_reset": lambda: _reset_cart_display(monkeypatch),
+            "checkout_scan": lambda: _handle_checkout_scan(monkeypatch),
             "overview": lambda: _refresh_overview(monkeypatch, graph_col, average),
         }
     )
@@ -409,8 +402,8 @@ def _measure_submit_phases(monkeypatch, graph_col="rank", average=False):
     checkout_result, timings["checkout"] = _measure(
         lambda: _submit_basket(monkeypatch)
     )
-    cart_reset_result, timings["cart_reset"] = _measure(
-        lambda: _reset_cart_display(monkeypatch)
+    checkout_scan_result, timings["checkout_scan"] = _measure(
+        lambda: _handle_checkout_scan(monkeypatch)
     )
     (overview_result, overview_timings), timings["overview"] = _measure(
         lambda: _refresh_overview_parts(graph_col, average)
@@ -420,7 +413,7 @@ def _measure_submit_phases(monkeypatch, graph_col="rank", average=False):
     return (
         {
             "checkout": checkout_result,
-            "cart_reset": cart_reset_result,
+            "checkout_scan": checkout_scan_result,
             "overview": overview_result,
         },
         timings,
@@ -434,9 +427,9 @@ def _assert_submit_phases_under_limits(label, results, timings):
         f"{label} checkout phase exceeded "
         f"{CHECKOUT_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
     )
-    assert timings["cart_reset"] < CART_RESET_PHASE_LIMIT_SECONDS, (
-        f"{label} cart reset phase exceeded "
-        f"{CART_RESET_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
+    assert timings["checkout_scan"] < CHECKOUT_SCAN_PHASE_LIMIT_SECONDS, (
+        f"{label} checkout scan phase exceeded "
+        f"{CHECKOUT_SCAN_PHASE_LIMIT_SECONDS:.3f}s: {timing_details}"
     )
     assert timings["overview"] < OVERVIEW_PHASE_LIMIT_SECONDS, (
         f"{label} overview phase exceeded "
@@ -456,9 +449,10 @@ def _assert_submit_phases_under_limits(label, results, timings):
     )
 
     assert results["checkout"][0] is False
-    assert results["checkout"][3] is no_update
-    assert results["cart_reset"][1] == ""
-    assert results["cart_reset"][2] is no_update
+    assert results["checkout"][-1] is no_update
+    assert results["checkout_scan"][0] is no_update
+    assert results["checkout_scan"][1] is no_update
+    assert results["checkout_scan"][2] is no_update
     assert results["overview"] is not no_update
 
 
@@ -491,7 +485,8 @@ def test_scan_user_barcode_opens_basket_workflow_under_limit(scan_db, monkeypatc
     )
     assert errors == {}
     assert results["open_modal"][0] is True
-    assert results["open_modal"][3] is no_update
+    assert results["open_modal"][-1] is no_update
+    assert [line.children for line in results["open_modal"][3]] == ["Products: "]
     assert results["transaction_graph"][1] is no_update
     assert "Current bill" in results["bill_preview"]
     assert len(scan_db._temporary_table.get()) == 0
@@ -541,6 +536,7 @@ def test_scan_product_barcode_workflow_adds_to_basket_under_limit(
         no_update,
         no_update,
         no_update,
+        no_update,
     )
     assert len(scan_db._temporary_table.get()) == 1
 
@@ -563,10 +559,10 @@ def test_scan_user_barcode_submits_purchase_workflow_under_limit(
 
     # Assert
     assert checkout_result[0] is False
-    assert checkout_result[3] is no_update
+    assert checkout_result[-1] is no_update
     assert downstream_errors == {}
-    assert downstream_results["cart_reset"][1] == ""
-    assert downstream_results["cart_reset"][2] is no_update
+    assert downstream_results["checkout_scan"][1] is no_update
+    assert downstream_results["checkout_scan"][2] is no_update
     assert downstream_results["overview"] is not no_update
     assert len(scan_db._transaction_table.get()) == transactions_before + 10
 
@@ -608,7 +604,7 @@ def test_skewed_category_submit_product_overview_under_limit(
     # Assert
     assert checkout_result[0] is False
     assert downstream_errors == {}
-    assert downstream_results["cart_reset"][1] == ""
+    assert downstream_results["checkout_scan"][1] is no_update
     assert downstream_results["overview"] is not no_update
     assert len(skewed_category_scan_db._transaction_table.get()) == (
         transactions_before + 10
@@ -663,7 +659,7 @@ def test_wide_group_submit_overview_under_limit(
     # Assert
     assert checkout_result[0] is False
     assert downstream_errors == {}
-    assert downstream_results["cart_reset"][1] == ""
+    assert downstream_results["checkout_scan"][1] is no_update
     assert downstream_results["overview"] is not no_update
     assert len(wide_group_scan_db._transaction_table.get()) == transactions_before + 10
 
@@ -733,7 +729,7 @@ def test_rapid_product_scans_drain_under_burst_limit(scan_db, monkeypatch):
     assert len(results) == BURST_SCAN_COUNT
     assert all(result["add_product"][2] is no_update for result in results)
     assert all(
-        result["close_guard"] == (no_update, no_update, no_update, no_update)
+        result["close_guard"] == (no_update,) * 5
         for result in results
     )
     assert len(scan_db._temporary_table.get()) == BURST_SCAN_COUNT

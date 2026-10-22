@@ -113,8 +113,8 @@ def test_bad_barcode_open(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert res[3][0]["msg"] == "Invalid barcode: 'xxx'"
+    assert isinstance(res[-1], list)
+    assert res[-1][0]["msg"] == "Invalid barcode: 'xxx'"
 
 
 def test_bad_barcode_close(monkeypatch, temp_db):
@@ -132,8 +132,8 @@ def test_bad_barcode_close(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] is no_update
     assert res[2] == ""
-    assert isinstance(res[3], list)
-    assert res[3][0]["msg"] == "Invalid barcode: 'close'"
+    assert isinstance(res[-1], list)
+    assert res[-1][0]["msg"] == "Invalid barcode: 'close'"
 
 
 def test_no_users_exists(monkeypatch, temp_db):
@@ -149,8 +149,8 @@ def test_no_users_exists(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "No users exist" in res[3][0]["msg"]
+    assert isinstance(res[-1], list)
+    assert "No users exist" in res[-1][0]["msg"]
 
 
 def test_new_trans_inp_success(monkeypatch, temp_db):
@@ -175,7 +175,8 @@ def test_new_trans_inp_success(monkeypatch, temp_db):
     assert res[0] is True
     assert res[1] is no_update
     assert res[2] == ""
-    assert res[3] is no_update
+    assert [line.children for line in res[3]] == ["Products: "]
+    assert res[-1] is no_update
     assert called["reset"] is True
 
 
@@ -332,8 +333,8 @@ def test_paid_user_cannot_open_transaction_modal(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert res[3][0]["msg"] == "User has already paid: 1234"
+    assert isinstance(res[-1], list)
+    assert res[-1][0]["msg"] == "User has already paid: 1234"
 
 
 def test_prod_barcode_success(monkeypatch, temp_db):
@@ -358,6 +359,7 @@ def test_prod_barcode_success(monkeypatch, temp_db):
     assert res[1] == ""
     assert res[2] is no_update
     assert res[3] is no_update
+    assert res[-1] is no_update
 
 
 def test_checkout_records_basket_once_and_clears_temporary_table(temp_db):
@@ -464,6 +466,67 @@ def test_checkout_clear_failure_rolls_back_purchase_and_preserves_basket(
     assert len(temp_db.temporary) == 1
 
 
+def test_checkout_scan_keeps_visible_basket(temp_db):
+    _load_checkout_data(temp_db, product_count=2)
+
+    result = trans_layout.new_trans(1, True, "001234", "1234", [])
+
+    assert result == (no_update, "", no_update)
+    assert len(temp_db.temporary) == 2
+
+
+def test_opening_returns_fresh_basket(monkeypatch, temp_db):
+    _load_checkout_data(temp_db, product_count=2)
+    monkeypatch.setattr(
+        trans_layout, "ctx", types.SimpleNamespace(triggered_id="new_trans_inp")
+    )
+
+    result = trans_layout.open_trans_modal(1, None, "1234", "101", [])
+
+    assert result[0] is True
+    assert [line.children for line in result[3]] == ["Products: "]
+    assert result[-1] is no_update
+    assert temp_db.temporary.empty
+
+
+def test_failed_opening_keeps_basket(monkeypatch, temp_db):
+    _load_checkout_data(temp_db, product_count=2)
+    monkeypatch.setattr(
+        trans_layout, "ctx", types.SimpleNamespace(triggered_id="new_trans_inp")
+    )
+
+    def fail():
+        raise RuntimeError("reset failed")
+
+    monkeypatch.setattr(trans_layout, "reset_current_trans", fail)
+
+    result = trans_layout.open_trans_modal(1, None, "1234", None, [])
+
+    assert result[:4] == (no_update,) * 4
+    assert result[-1][0]["msg"] == "reset failed"
+    assert len(temp_db.temporary) == 2
+
+
+def test_scans_multipliers_and_removal_update_display(temp_db):
+    _load_checkout_data(temp_db, product_count=0)
+
+    added = trans_layout.new_trans(1, True, "101", "1234", [])
+    multiplied = trans_layout.new_trans(2, True, "3", "1234", [])
+    removed = trans_layout.new_trans(3, True, "0", "1234", [])
+
+    assert [line.children for line in added[0]] == ["Products: ", "1x: P"]
+    assert [line.children for line in multiplied[0]] == ["Products: ", "3x: P"]
+    assert [line.children for line in removed[0]] == ["Products: "]
+    assert all(result[1:] == ("", no_update) for result in [added, multiplied, removed])
+    assert temp_db.temporary.empty
+
+
+def test_scan_after_closing_is_ignored(temp_db):
+    result = trans_layout.new_trans(1, False, "1234", "", [])
+
+    assert result == (no_update, no_update, no_update)
+
+
 def test_empty_barcode_open(monkeypatch, temp_db):
     # Arrange
     temp_db.upload_values([
@@ -479,41 +542,37 @@ def test_empty_barcode_open(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] == ""
     assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "Empty barcode" in res[3][0]["msg"]
+    assert isinstance(res[-1], list)
+    assert "Empty barcode" in res[-1][0]["msg"]
 
 
-def test_add_transactions_failure(monkeypatch, temp_db):
-    # Arrange
-    monkeypatch.setattr(trans_layout, "get_barcode", lambda v: "1234")
-    temp_db.upload_values([
-        {"barcode": "1234", "name": "U", "rank": "r", "team": "t", "is_guest": 0}
-    ], "users")
-    temp_db.upload_values([
-        {"barcode": "101", "name": "P", "price": 1.0, "category": "c", "current_stock": 10, "initial_stock": 10}
-    ], "prods")
-    monkeypatch.setattr(trans_layout, "ctx", types.SimpleNamespace(triggered_id="prod_barcode"))
-    temp_db.upload_values([
-        {"barcode_prod": "101", "name": "P"}
-    ], "temporary")
+@pytest.mark.parametrize("table, method", [("transactions", "append"), ("temporary", "set")])
+def test_checkout_failure_keeps_basket_and_allows_retry(monkeypatch, temp_db, table, method):
+    _load_checkout_data(temp_db, product_count=2)
+    basket_before = temp_db.temporary
+    monkeypatch.setattr(
+        trans_layout, "ctx", types.SimpleNamespace(triggered_id="prod_barcode")
+    )
 
-    # Make add_transactions fail by monkeypatching the table append directly
-    original_append = temp_db._transaction_table.append
+    def fail(_rows):
+        raise RuntimeError("checkout failed")
 
-    def fake_append(df):
-        return "failed", [{"row": 1}]
+    with monkeypatch.context() as failure:
+        failure.setattr(temp_db.get_table(table), method, fail)
+        result = trans_layout.open_trans_modal(None, 1, "1234", "1234", [])
 
-    monkeypatch.setattr(temp_db._transaction_table, "append", fake_append)
+    assert result[:4] == (no_update,) * 4
+    assert result[-1][0]["msg"] == "checkout failed"
+    assert temp_db.temporary.equals(basket_before)
+    assert temp_db.transactions.empty
+    assert trans_layout.new_trans(1, True, "1234", "1234", []) == (no_update, "", no_update)
 
-    # Act
-    res = trans_layout.open_trans_modal(None, 1, "123", "123", [])
+    retry = trans_layout.open_trans_modal(None, 2, "1234", "1234", [])
 
-    # Assert
-    assert res[0] is no_update
-    assert res[1] is no_update
-    assert res[2] is no_update
-    assert isinstance(res[3], list)
-    assert "Failed to add transactions" in res[3][0]["msg"]
+    assert retry[:4] == (False, "", no_update, no_update)
+    assert retry[-1] is no_update
+    assert temp_db.temporary.empty
+    assert len(temp_db.transactions) == 2
 
 
 def test_unexpected_error_branch(monkeypatch, temp_db):
@@ -531,4 +590,4 @@ def test_unexpected_error_branch(monkeypatch, temp_db):
     assert res[0] is no_update
     assert res[1] is no_update
     assert res[2] is no_update
-    assert res[3] is no_update
+    assert res[-1] is no_update

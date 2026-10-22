@@ -115,10 +115,11 @@ def get_transactions(trigger, barcode):
     return format_count_bar_chart(px.bar(trans_data), show_x_tick_labels=False)
 
 
-@callback_with_error_queue(3,
+@callback_with_error_queue(4,
     Output("new_trans_modal", "is_open"),
     Output("new_trans_inp", "value"),
     Output("prod_barcode", "value", allow_duplicate=True),
+    Output("show_current_prods", "children", allow_duplicate=True),
     Input("new_trans_inp", "n_submit"),
     Input("prod_barcode", "n_submit"),
     State("new_trans_inp", "value"),
@@ -126,8 +127,8 @@ def get_transactions(trigger, barcode):
 )
 def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
     db = Container.get(Database)
-    clear_barcode_open = (no_update, "", no_update)
-    clear_barcode_close = (no_update, no_update, "")
+    clear_barcode_open = (no_update, "", no_update, no_update)
+    clear_barcode_close = (no_update, no_update, "", no_update)
     raw_barcode_open = barcode_open
     barcode_open = get_barcode(barcode_open)
     if barcode_open == "bad barcode":
@@ -159,14 +160,14 @@ def open_trans_modal(trigger_open, trigger_close, barcode_open, barcode_close):
                     ValueError(f"User has already paid: {barcode_open}"),
                 )
             reset_current_trans()
-            return True, no_update, ""
+            return True, no_update, "", _render_basket(get_current_trans())
         return clear_barcode_open #I couldn't provoke this branch when testing
     
     elif trigger == "prod_barcode" and strings_map_to_same_number(barcode_close,barcode_open):
         checkout_cart_to(barcode_close, db)
-        return False, "", no_update
+        return False, "", no_update, no_update
 
-    return no_update, no_update, no_update
+    return no_update, no_update, no_update, no_update
 
 @db_transaction_raises
 def checkout_cart_to(user_barcode, db:Database):
@@ -203,21 +204,26 @@ def strings_map_to_same_number(s1,s2):
     Output("show_current_prods", "children"),
     Output("prod_barcode", "value"),
     Input("prod_barcode", "n_submit"),
+    State("new_trans_modal", "is_open"),
     State("prod_barcode", "value"),
     State("new_trans_inp", "value"),
 )
 @db_transaction_result(fallback_values=(no_update, ""))
-def new_trans(trigger, _barcode, user_barcode):
+def new_trans(trigger, is_open, _barcode, user_barcode):
+    if not is_open:
+        return no_update, no_update
 
-    prods = get_prods()
-    current = get_current_trans()
     barcode = get_barcode(_barcode)
     if (not str(barcode).isdigit()) or len(str(barcode)) < 1:
         raise ValueError(f"Invalid barcode: {_barcode}")
     user_barcode = get_barcode(user_barcode)
-    if barcode == user_barcode:
-        return ( [html.H1("Products: ")], "" )
-    elif int(barcode) == 0:
+    is_checkout = barcode == user_barcode
+    if is_checkout:
+        return no_update, ""
+
+    prods = get_prods()
+    current = get_current_trans()
+    if int(barcode) == 0:
         if len(current) == 0:
             raise ValueError("You can't remove products before adding any")
         last_barcode = current.iloc[len(current) - 1]["barcode_prod"]
@@ -253,6 +259,11 @@ def new_trans(trigger, _barcode, user_barcode):
         new_transaction = pd.DataFrame([{"barcode_prod": barcode, "name": name}])
         current = pd.concat([current, new_transaction], ignore_index=True)
 
+    update_current_trans(current)
+    return _render_basket(current), ""
+
+
+def _render_basket(current: pd.DataFrame):
     display_text = [html.H1("Products: ")]
     for current_barcode in current["barcode_prod"].unique():
         prod_name = str(
@@ -261,9 +272,7 @@ def new_trans(trigger, _barcode, user_barcode):
         current_amount = int(len(current[current["barcode_prod"] == current_barcode]))
         display_text.append(html.H2(f"{current_amount}x: {prod_name}"))
 
-    update_current_trans(current)
-
-    return display_text, ""
+    return display_text
 
 
 @callback(
