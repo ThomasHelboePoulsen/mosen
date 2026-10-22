@@ -34,7 +34,7 @@ Code locations below use file paths and function names. Function names are the p
 | 02 | ~~Require unique product names~~ | Small | **Done** |
 | 03 | ~~Protect early payments during direct user deletion~~ | Small | **Done** |
 | 04 | ~~Remove optional payment-export rounding~~ | Small | **Done** |
-| 05 | Prevent product imports from removing purchased products | Small | Confirmed bug |
+| 05 | ~~Prevent product imports from removing purchased products~~ | Small | **Done** |
 | 06 | Preserve the visible basket after failed checkout | Small to medium | Confirmed bug |
 | 07 | Clear stale edit state on Create and Cancel | Small to medium | Confirmed user bug; analogous product path |
 | 08 | Validate numeric values before table replacement | Medium | Confirmed bug in shared table logic |
@@ -127,7 +127,7 @@ Code locations below use file paths and function names. Function names are the p
 
 ## 05. Prevent product imports from removing purchased products
 
-**Status:** Open. **Evidence:** A replacement product import omitting a purchased product reduced both a user's purchases and total revenue from 12.50 DKK to zero.
+**Status:** Done (16 October 2026). **Evidence:** Before the fix, isolated callback regressions reproduced product replacements reducing purchases/revenue from 22.50 DKK to 12.50 DKK, 10 DKK or zero when one or both purchased products were omitted.
 
 **Issue:** Importing products can leave existing transactions referring to a product that no longer exists. Those purchases are subsequently priced at zero.
 
@@ -140,6 +140,10 @@ Code locations below use file paths and function names. Function names are the p
 **Where:** `src/main_page_callbacks.py`: `update_settings()`, adjacent to `validate_user_import()`; `src/analytics/trans_calculations.py`: `get_income()`, `get_revenue()` for the observed consequence.
 
 **Acceptance:** An unsafe product replacement is rejected without changing products, transactions or accounting. A replacement retaining purchased barcodes succeeds, as does removing an unused product. Relevant tests: `tests/test_main_page_callbacks.py`.
+
+**Implemented:** Added `validate_product_import()` beside the user import guard. It compares typed existing products and transaction references with imported barcodes and rejects removal of purchased products, listing their names and barcodes. Validation runs in the existing import transaction before backup or settings/data writes and uses the existing shaped error response. Initial imports, additions, edits (including price changes), removal of unused products and header-only imports keep their existing behavior. Table validation and accounting calculations are unchanged.
+
+**Verification:** `.\.venv\Scripts\python.exe -m pytest -q tests/test_main_page_callbacks.py tests/test_edit_data_modals.py tests/test_product_table.py tests/test_product_table_properties.py` passed **126 tests**. Seven new regression cases cover rejection of one or multiple purchased-product removals, clear product identification, unchanged cached data/settings and persisted products, preserved revenue/income, correctly shaped error outputs, allowed edits/additions/unused-product removal, initial imports, header-only imports and missing barcode headers. A read-only review found no correctness or simplicity issues. Tests use temporary databases; the local venv required escalated execution because its launcher could not start in the sandbox.
 
 ## 06. Preserve the visible basket after failed checkout
 

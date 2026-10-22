@@ -620,6 +620,7 @@ def test_first_user_import_commits_settings_and_data_after_backup(
         ),
         pytest.param("users", "users.csv", b"", "Cannot read users.csv as CSV", id="empty-file"),
         pytest.param("users", "users.csv", b"Not a table export\n", "missing required columns", id="missing-headers"),
+        pytest.param("prods", "prods.csv", b"name,price,category,current_stock,initial_stock\nCola,12.5,Drinks,8,10\n", "missing required columns", id="missing-product-barcode"),
     ],
 )
 def test_invalid_upload_reports_clear_error_without_changing_data(
@@ -818,6 +819,101 @@ def test_empty_user_import_leaves_existing_users_untouched(
     assert result[2] is False
     assert result[5] is no_update
     assert temp_db.users.to_dict(orient="records") == users_before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize("removed_barcodes", [[101], [101, 102]])
+def test_product_import_cannot_remove_purchased_products(
+    settings_upload, tmp_path, temp_db, removed_barcodes
+):
+    # Arrange
+    _load_transaction_data(temp_db)
+    temp_db._product_table.append([
+        dict(barcode=102, name="Cola", price=12.5, category="Drinks", current_stock=8, initial_stock=10),
+        dict(barcode=103, name="Water", price=5, category="Drinks", current_stock=10, initial_stock=10),
+    ])
+    temp_db._transaction_table.append([{
+        "barcode_user": 1000, "barcode_prod": 102, "timestamp": "26/07/2026 11:00:00",
+    }])
+    before = _database_rows(temp_db)
+    products = temp_db._product_table.get()
+    imported = products[~products["barcode"].isin(removed_barcodes)].copy()
+    imported.loc[imported["barcode"] == 103, "name"] = "Changed Water"
+
+    # Act
+    result = settings_upload(imported.to_csv(index=False), filename="prods.csv", table="prods")
+
+    # Assert
+    assert result[:5] == (no_update, no_update, True, [no_update] * 3, no_update)
+    message = result[5][0]["msg"]
+    assert "Cannot remove purchased products" in message
+    for barcode, name in [(101, "Beer"), (102, "Cola")]:
+        assert (f"{name} ({barcode})" in message) == (barcode in removed_barcodes)
+    assert "Water" not in message
+    temp_db.refresh_caches()
+    assert _database_rows(temp_db) == before
+    assert not (tmp_path / "backups").exists()
+
+
+def test_product_import_allows_edits_additions_and_removal_of_unused_products(
+    settings_upload, temp_db
+):
+    # Arrange
+    _load_transaction_data(temp_db)
+    temp_db._product_table.append([dict(
+        barcode=102, name="Unused", price=5, category="Drinks", current_stock=10, initial_stock=10,
+    )])
+    transactions_before = temp_db.transactions.to_dict(orient="records")
+    csv = (
+        "barcode,name,price,category,current_stock,initial_stock\n"
+        "103,Cola,5,Drinks,10,10\n"
+        "101,Renamed Beer,12.5,Drinks,7,10\n"
+    )
+
+    # Act
+    result = settings_upload(csv, filename="prods.csv", table="prods")
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    products = temp_db._product_table.get().sort_values("barcode")
+    assert products[["barcode", "name", "price", "current_stock"]].values.tolist() == [
+        [101, "Renamed Beer", 12.5, 7],
+        [103, "Cola", 5, 10],
+    ]
+    assert temp_db.transactions.to_dict(orient="records") == transactions_before
+
+
+def test_first_product_import_succeeds(settings_upload, temp_db):
+    # Arrange / Act
+    result = settings_upload(
+        "barcode,name,price,category,current_stock,initial_stock\n101,Beer,12.5,Drinks,10,10\n",
+        filename="prods.csv", table="prods",
+    )
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    assert temp_db._product_table.get()[["barcode", "name", "price"]].values.tolist() == [
+        [101, "Beer", 12.5],
+    ]
+
+
+def test_empty_product_import_leaves_existing_products_untouched(settings_upload, tmp_path, temp_db):
+    # Arrange
+    _load_transaction_data(temp_db)
+    products_before = temp_db.prods.to_dict(orient="records")
+
+    # Act
+    result = settings_upload(
+        "barcode,name,price,category,current_stock,initial_stock\n",
+        filename="prods.csv", table="prods",
+    )
+
+    # Assert
+    assert result[2] is False
+    assert result[5] is no_update
+    assert temp_db.prods.to_dict(orient="records") == products_before
     assert not (tmp_path / "backups").exists()
 
 

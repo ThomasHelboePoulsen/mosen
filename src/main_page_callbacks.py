@@ -307,6 +307,26 @@ def validate_user_import(imported_users: pd.DataFrame) -> None:
     )
 
 
+def validate_product_import(imported_products: pd.DataFrame) -> None:
+    """Keep products referenced by purchases in replacement imports."""
+    db = Container.get(Database)
+    products = db._product_table.get()
+    transactions = db._transaction_table.get()
+    imported_barcodes = pd.to_numeric(imported_products["barcode"], errors="coerce")
+    removed_purchased_products = products[
+        products["barcode"].isin(transactions["barcode_prod"])
+        & ~products["barcode"].isin(imported_barcodes)
+    ]
+    if not removed_purchased_products.empty:
+        labels = ", ".join(
+            f"{product.name} ({product.barcode})"
+            for product in removed_purchased_products.itertuples()
+        )
+        raise ValueError(
+            f"Cannot remove purchased products: {labels}. Keep them in the CSV file."
+        )
+
+
 def _validate_user_removals(
     users_to_remove: pd.DataFrame, transactions: pd.DataFrame
 ) -> None:
@@ -419,8 +439,11 @@ def update_settings(
                         f"CSV for {table_name} is missing required columns: "
                         f"{', '.join(missing_columns)}."
                     )
-                if len(df) > 0 and table_name == "users":
-                    validate_user_import(df)
+                if len(df) > 0:
+                    if table_name == "users":
+                        validate_user_import(df)
+                    elif table_name == "prods":
+                        validate_product_import(df)
             except ValueError as error:
                 return TransactionResult(
                     (no_update, no_update, True, [no_update] * 3, no_update),
