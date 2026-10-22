@@ -771,6 +771,7 @@ def test_user_reimport_cannot_swap_non_default_values_between_barcodes(
     [
         pytest.param(0, True, "transactions", id="purchases"),
         pytest.param(1, False, "recorded early payments", id="paid-early"),
+        pytest.param(-1, False, "recorded early payments", id="negative-payment"),
     ],
 )
 def test_user_import_cannot_remove_users_with_purchases_or_payments(
@@ -794,7 +795,7 @@ def test_user_import_cannot_remove_users_with_purchases_or_payments(
 
     # Assert: reject all changes and keep Bob's payment persisted.
     assert result[:5] == (no_update, no_update, True, [no_update] * 3, no_update)
-    assert f"removes users with {message}" in result[5][0]["msg"]
+    assert f"Cannot remove users with {message}" in result[5][0]["msg"]
     assert _database_rows(temp_db) == before
     with closing(sqlite3.connect(temp_db.data_file)) as con:
         assert con.execute(

@@ -32,7 +32,7 @@ Code locations below use file paths and function names. Function names are the p
 | --- | --- | --- | --- |
 | 01 | ~~Fix Reset data~~ | Small | **Done** |
 | 02 | ~~Require unique product names~~ | Small | **Done** |
-| 03 | Protect early payments during direct user deletion | Small | Confirmed bug |
+| 03 | ~~Protect early payments during direct user deletion~~ | Small | **Done** |
 | 04 | ~~Remove optional payment-export rounding~~ | Small | **Done** |
 | 05 | Prevent product imports from removing purchased products | Small | Confirmed bug |
 | 06 | Preserve the visible basket after failed checkout | Small to medium | Confirmed bug |
@@ -85,7 +85,7 @@ Code locations below use file paths and function names. Function names are the p
 
 ## 03. Protect early payments during direct user deletion
 
-**Status:** Open. **Evidence:** A user with `paid_cents=5000` and no transactions can be deleted without an error.
+**Status:** Done (16 October 2026). **Evidence:** Before the fix, callback regressions confirmed that deletion reached the user-table replacement for users with no transactions and `paid_cents` values of 5000, 1, -1 and -5000.
 
 **Issue:** Direct deletion silently removes a recorded early payment.
 
@@ -98,6 +98,10 @@ Code locations below use file paths and function names. Function names are the p
 **Where:** `src/main_page_callbacks.py`: `edit_new_data_modals()`, `_validate_user_removals()`.
 
 **Acceptance:** Deleting a user with an early payment and no purchases displays an error and changes nothing. A user with neither remains deletable. Verify correctly shaped error outputs. Relevant tests: `tests/test_edit_data_modals.py`, `tests/test_main_page_callbacks.py`.
+
+**Implemented:** Direct user deletion now passes only the selected typed user row to `_validate_user_removals()` before any table replacement. The shared guard rejects any nonzero payment, including negative values, and still protects users with transactions. Imports and direct deletion use the same guard and error messages. Product deletion protection and transaction/error-queue handling remain unchanged.
+
+**Verification:** `.\.venv\Scripts\python.exe -m pytest -q tests/test_edit_data_modals.py tests/test_main_page_callbacks.py` passed **96 tests**, including eight new regression cases. Tests cover positive and negative payments, one-cent values, unchanged user cache and persisted rows after rejection, correctly shaped error outputs, and successful deletion of an unpaid user while preserving another user's payment with integer and string barcode inputs. Import regressions also verify negative-payment protection. Existing user/product transaction guards, ordinary deletion and missing-barcode behavior pass. Tests use isolated temporary databases; the local venv required escalated execution because its launcher could not start in the sandbox.
 
 ## 04. Remove optional payment-export rounding
 

@@ -1,5 +1,7 @@
 import pytest
 import pandas as pd
+import sqlite3
+from contextlib import closing
 from unittest.mock import patch
 from dash import no_update
 from src.container import Container
@@ -46,6 +48,60 @@ def test_product_data():
 
 
 class TestDeleteUserByBarcode:
+
+    @pytest.mark.parametrize("paid_cents", [5000, 1, -1, -5000])
+    @patch("src.main_page_callbacks.ctx")
+    def test_cannot_delete_user_with_early_payment(
+        self, mock_ctx, temp_db, test_user_data, paid_cents
+    ):
+        # Arrange: the selected user has a payment but no purchases.
+        upload_values(test_user_data.assign(paid_cents=paid_cents), "users")
+        mock_ctx.triggered_id = "edit_modal_delete"
+        users_before = temp_db._user_table.get()
+        with closing(sqlite3.connect(temp_db.data_file)) as connection:
+            stored_before = connection.execute("SELECT * FROM users").fetchall()
+
+        # Act
+        result = edit_new_data_modals(1, None, None, "users", 1500, [])
+
+        # Assert
+        assert result[:6] == (
+            no_update,
+            no_update,
+            [no_update] * 6,
+            [no_update] * PRODUCT_FORM_FIELD_COUNT,
+            no_update,
+            no_update,
+        )
+        assert len(result[6]) == 1
+        assert "Cannot remove users with recorded early payments" in result[6][0]["msg"]
+        pd.testing.assert_frame_equal(temp_db._user_table.get(), users_before)
+        with closing(sqlite3.connect(temp_db.data_file)) as connection:
+            assert connection.execute("SELECT * FROM users").fetchall() == stored_before
+
+    @pytest.mark.parametrize("barcode", [1500, "1500"])
+    @patch("src.main_page_callbacks.ctx")
+    def test_deletes_unpaid_user_while_preserving_another_users_payment(
+        self, mock_ctx, temp_db, test_user_data, barcode
+    ):
+        # Arrange
+        paid_user = test_user_data.assign(barcode=1600, name="Paid User", paid_cents=5000)
+        upload_values(pd.concat([test_user_data, paid_user], ignore_index=True), "users")
+        mock_ctx.triggered_id = "edit_modal_delete"
+        users = temp_db._user_table.get()
+        expected_users = users[users["barcode"] == 1600].reset_index(drop=True)
+
+        # Act
+        result = edit_new_data_modals(1, None, None, "users", barcode, [])
+
+        # Assert
+        pd.testing.assert_frame_equal(temp_db._user_table.get(), expected_users)
+        assert result[4] == expected_users.to_dict(orient="records")
+        assert result[6] is no_update
+        with closing(sqlite3.connect(temp_db.data_file)) as connection:
+            assert connection.execute(
+                "SELECT barcode, paid_cents FROM users"
+            ).fetchall() == [(1600, 5000)]
 
     @patch("src.main_page_callbacks.ctx")
     def test_deletes_user_and_returns_empty_table(self, mock_ctx, temp_db, test_user_data):
@@ -148,7 +204,7 @@ class TestDeleteWithTransactions:
             no_update,
             no_update,
         )
-        assert "Cannot delete user 1500" in result[6][0]["msg"]
+        assert "Cannot remove users with transactions" in result[6][0]["msg"]
 
     @patch("src.main_page_callbacks.ctx")
     def test_cannot_delete_product_with_transactions(

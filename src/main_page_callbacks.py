@@ -310,19 +310,17 @@ def validate_user_import(imported_users: pd.DataFrame) -> None:
 def _validate_user_removals(
     users_to_remove: pd.DataFrame, transactions: pd.DataFrame
 ) -> None:
-    """Prevent imports from deleting users with purchases or early payments."""
+    """Protect purchases and early payments during imports and direct deletion."""
     has_purchases = users_to_remove["barcode"].isin(transactions["barcode_user"]).any()
     if has_purchases:
         raise ValueError(
-            "Cannot import users because the file removes users with transactions. "
-            "Keep those users in the CSV file or remove their transactions first."
+            "Cannot remove users with transactions. Remove their transactions first."
         )
 
     has_early_payments = users_to_remove["paid_cents"].ne(0).any()
     if has_early_payments:
         raise ValueError(
-            "Cannot import users because the file removes users with recorded early payments. "
-            "Keep those users in the CSV file or remove their early payments first."
+            "Cannot remove users with recorded early payments. Remove their early payments first."
         )
 
 
@@ -675,17 +673,18 @@ def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
         if table == "users":
             data = user_table.get()
             other_table_data = no_update
-            in_use = transactions["barcode_user"].astype(str).eq(str(barcode)).any()
-            delete_type = "user"
+            _validate_user_removals(
+                data[data["barcode"] == int(barcode)],
+                transactions,
+            )
         elif table == "prods":
             data = prod_table.get()
             other_table_data = no_update
             in_use = transactions["barcode_prod"].astype(str).eq(str(barcode)).any()
-            delete_type = "product"
-        if in_use:
-            raise ValueError(
-                f"Cannot delete {delete_type} {barcode} because it has transactions."
-            )
+            if in_use:
+                raise ValueError(
+                    f"Cannot delete product {barcode} because it has transactions."
+                )
         barcode_mask = data["barcode"] == int(barcode)
         data = data[~barcode_mask].copy()
         db.upload_values_raises(data, table)
