@@ -12,7 +12,7 @@ from src.database.data_connection import (
     add_transactions,
     update_values,
 )
-from src.tables.prod_callbacks import add_row, validate_barcode_prod, open_prod_modal, open_stock, confirm_new_stock
+from src.tables.prod_callbacks import add_row, add_row_callback, validate_barcode_prod, open_prod_modal, open_stock, confirm_new_stock
 from src.analytics.product_calculations import calculate_waste
 
 
@@ -88,7 +88,7 @@ class TestProdCallbacksAddRow:
         vals = [456, "Soda", 3.0, "Beverage", 30]
         
         # Act
-        result, edit_value = add_row(1, None, vals, None)
+        add_row(vals, None)
         
         # Assert
         prods = get_prods()
@@ -98,24 +98,44 @@ class TestProdCallbacksAddRow:
         assert prods.iloc[0]["current_stock"] == "30"
         assert prods.iloc[0]["initial_stock"] == "30"
 
-    def test_add_row_with_edit_replaces_existing_product(self, test_db):
+    @pytest.mark.parametrize("current_stock", [10, 0])
+    def test_add_row_with_edit_replaces_existing_product(self, test_db, current_stock):
         # Arrange
         prod_data = pd.DataFrame([
-            {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
+            {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": current_stock, "initial_stock": 20}
         ])
         upload_values(prod_data, "prods")
         vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
-        result, edit_value = add_row(1, None, vals, 123)
+        add_row(vals, 123)
         
         # Assert
         prods = get_prods()
         assert len(prods) == 1
         assert prods.iloc[0]["barcode"] == "456"
         assert prods.iloc[0]["name"] == "Wine"
-        assert prods.iloc[0]["current_stock"] == "10"
+        assert prods.iloc[0]["current_stock"] == str(current_stock)
         assert prods.iloc[0]["initial_stock"] == "15"
+
+    def test_failed_readback_rolls_back_product_edit(self, test_db):
+        # Arrange
+        upload_values(pd.DataFrame([
+            {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
+        ]), "prods")
+        before = test_db._product_table.get()
+        vals = [123, "Changed name", 8.0, "Alcohol", 15.5]
+
+        # Act
+        rows, edit_value, is_open, revision, errors = add_row_callback(1, vals, 123, [])
+
+        # Assert
+        assert rows is no_update
+        assert edit_value is no_update
+        assert is_open is no_update
+        assert revision is no_update
+        assert len(errors) == 1
+        pd.testing.assert_frame_equal(test_db._product_table.get(), before)
 
     def test_add_row_edit_does_not_record_stock_update(self, test_db):
         # Arrange
@@ -137,7 +157,7 @@ class TestProdCallbacksAddRow:
         vals = [123, "Beer", 5.0, "Beverage", 30]
 
         # Act
-        add_row(1, None, vals, 123)
+        add_row(vals, 123)
 
         # Assert
         assert get_last_stock_update_at() == ""
@@ -163,21 +183,11 @@ class TestProdCallbacksAddRow:
         vals = [456, "Wine", 8.0, "Alcohol", 15]
         
         # Act
-        result, edit_value = add_row(1, None, vals, None)
+        add_row(vals, None)
         
         # Assert
         trans = get_trans()
         assert trans.iloc[0]["barcode_prod"] == "123"
-
-    def test_add_row_with_n_clicks_none_returns_no_update(self, test_db):
-        # Arrange
-        vals = [456, "Wine", 8.0, "Alcohol", 15]
-        
-        # Act
-        result, edit_value = add_row(None, None, vals, None)
-        
-        # Assert
-        assert result is no_update
 
 
 class TestOpenProdModal:
@@ -193,11 +203,12 @@ class TestOpenProdModal:
         test_db._product_table.set(pd.DataFrame(data))
         
         # Act
-        is_open, barcode = open_prod_modal(1, 0, 0)
+        is_open, fields, edit_barcode = open_prod_modal(1, 0, False)
         
         # Assert
         assert is_open is True
-        assert barcode == 457
+        assert fields == [457, None, None, None, None]
+        assert edit_barcode is None
 
     @patch('src.tables.prod_callbacks.ctx')
     def test_open_prod_modal_default_barcode_when_empty(self, mock_ctx, test_db):
@@ -205,22 +216,40 @@ class TestOpenProdModal:
         mock_ctx.triggered_id = "new_prod_btn"
         
         # Act
-        is_open, barcode = open_prod_modal(1, 0, 0)
+        is_open, fields, edit_barcode = open_prod_modal(1, 0, False)
         
         # Assert
         assert is_open is True
-        assert barcode == 101
+        assert fields == [101, None, None, None, None]
+        assert edit_barcode is None
 
     @patch('src.tables.prod_callbacks.ctx')
-    def test_open_prod_modal_closes_on_confirm(self, mock_ctx, test_db):
+    def test_cancel_closes_modal_and_clears_edit_context(self, mock_ctx, test_db):
         # Arrange
-        mock_ctx.triggered_id = "confirm_prod"
+        mock_ctx.triggered_id = "cancel_prod"
         
         # Act
-        is_open, barcode = open_prod_modal(0, 1, 0)
+        result = open_prod_modal(0, 1, True)
         
         # Assert
-        assert is_open is False
+        assert result == (False, [no_update] * 5, None)
+
+    @patch('src.tables.prod_callbacks.ctx')
+    def test_dismissal_clears_edit_context(self, mock_ctx, test_db):
+        mock_ctx.triggered_id = "new_prod_modal"
+
+        result = open_prod_modal(0, 0, False)
+
+        assert result == (no_update, [no_update] * 5, None)
+
+    @pytest.mark.parametrize("trigger", ["new_prod_modal", "new_prod_btn", "cancel_prod"])
+    @patch('src.tables.prod_callbacks.ctx')
+    def test_mounting_inputs_preserves_modal_and_edit_context(self, mock_ctx, test_db, trigger):
+        mock_ctx.triggered_id = trigger
+
+        result = open_prod_modal(None, None, True)
+
+        assert result == (no_update, [no_update] * 5, no_update)
 
 
 class TestConfirmNewStock:

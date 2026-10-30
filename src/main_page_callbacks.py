@@ -745,7 +745,7 @@ def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
                 [1] if is_guest else [],
                 paid,
             ]
-            return True, False, row_list, [no_update] * prod_col_count, no_update, no_update
+            return True, no_update, row_list, [no_update] * prod_col_count, no_update, no_update
         if table == "prods":
             data = prod_table.get()
             row = data[data["barcode"] == int(barcode)]
@@ -759,7 +759,7 @@ def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
                 row_dict["category"],
                 row_dict["initial_stock"],
             ]
-            return False, True, [no_update] * user_col_count, row, no_update, no_update
+            return no_update, True, [no_update] * user_col_count, row, no_update, no_update
     else:
         return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
 

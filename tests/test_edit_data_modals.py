@@ -7,6 +7,7 @@ from dash import no_update
 from src.container import Container
 from src.database.data_connection import Database, add_transactions, upload_values
 from src.main_page_callbacks import edit_new_data_modals, open_edit_modal
+from src.tables import user_callbacks, prod_callbacks
 
 PRODUCT_FORM_FIELD_COUNT = 5
 
@@ -45,6 +46,101 @@ def test_product_data():
             "initial_stock": 20,
         }
     ])
+
+
+@pytest.fixture(params=["user", "prod"])
+def populated_edit_form(request, temp_db, test_user_data, test_product_data):
+    upload_values(test_user_data.assign(is_guest=1, paid_cents=2500, waste_cents=300), "users")
+    upload_values(test_product_data, "prods")
+    upload_values(pd.DataFrame([{
+        "barcode_user": 1500, "barcode_prod": 101, "timestamp": "2026-10-22 10:00:00",
+    }]), "transactions")
+    if request.param == "user":
+        return temp_db, user_callbacks, "user", "users", 1500, 2
+    return temp_db, prod_callbacks, "prod", "prods", 101, 3
+
+
+def test_create_after_cancelled_edit_preserves_original_accounting(populated_edit_form):
+    db, callbacks, kind, table, barcode, form_index = populated_edit_form
+    before = {name: db.get_table(name).get() for name in ["users", "prods", "transactions"]}
+    with patch("src.main_page_callbacks.ctx") as edit_ctx:
+        edit_ctx.triggered_id = "edit_modal_edit"
+        edit = edit_new_data_modals(None, 1, None, table, barcode, [])
+    assert edit[form_index][0] == barcode
+    opener = getattr(callbacks, f"open_{kind}_modal")
+
+    with patch.object(callbacks, "ctx") as modal_ctx:
+        modal_ctx.triggered_id = f"cancel_{kind}"
+        assert opener(0, 1, True)[2] is None
+        modal_ctx.triggered_id = f"new_{kind}_btn"
+        is_open, values, edit_barcode = opener(1, 0, False)
+    assert is_open is True
+    assert edit_barcode is None
+    if kind == "user":
+        values[1:4] = ["New user", "Member", "B"]
+    else:
+        values[1:] = ["New product", 12.5, "Drink", 30]
+    rows, edit_value, is_open, revision, errors = callbacks.add_row_callback(1, values, edit_barcode, [])
+
+    assert len(rows) == 2
+    assert rows == db.get_table(table).get().to_dict(orient="records")
+    assert edit_value is None
+    assert is_open is False
+    assert isinstance(revision, str)
+    assert errors is no_update
+    for name, expected in before.items():
+        actual = db.get_table(name).get()
+        if name != "transactions":
+            actual = actual[actual["barcode"].isin(expected["barcode"])].reset_index(drop=True)
+        pd.testing.assert_frame_equal(actual, expected)
+    new = db.get_table(table).get().iloc[-1]
+    if kind == "user":
+        assert (new["is_guest"], new["paid_cents"], new["waste_cents"]) == (0, 0, -1)
+    else:
+        assert (new["current_stock"], new["initial_stock"]) == (30, 30)
+
+
+@pytest.mark.parametrize("callbacks", [user_callbacks, prod_callbacks], ids=["user", "prod"])
+@pytest.mark.parametrize("n_clicks", [None, 0])
+def test_save_without_click_preserves_form_state(callbacks, n_clicks):
+    with patch.object(callbacks, "add_row") as save:
+        result = callbacks.add_row_callback(n_clicks, [], 1500, [])
+
+    save.assert_not_called()
+    assert result == (no_update,) * 5
+
+
+def test_failed_edit_retains_context_for_barcode_change_retry(populated_edit_form):
+    db, callbacks, kind, table, barcode, form_index = populated_edit_form
+    before = db.get_table(table).get()
+    transactions_before = db._transaction_table.get()
+    with patch("src.main_page_callbacks.ctx") as edit_ctx:
+        edit_ctx.triggered_id = "edit_modal_edit"
+        values = edit_new_data_modals(None, 1, None, table, barcode, [])[form_index]
+    values[0] = barcode + 1
+    values[1] = None
+
+    rows, edit_value, is_open, revision, errors = callbacks.add_row_callback(1, values, barcode, [])
+
+    assert rows is no_update
+    assert edit_value is no_update
+    assert is_open is no_update
+    assert revision is no_update
+    assert len(errors) == 1
+    pd.testing.assert_frame_equal(db.get_table(table).get(), before)
+    pd.testing.assert_frame_equal(db._transaction_table.get(), transactions_before)
+    values[1] = "Corrected name"
+    rows, edit_value, is_open, revision, errors = callbacks.add_row_callback(2, values, barcode, [])
+    assert edit_value is None
+    assert is_open is False
+    assert isinstance(revision, str)
+    assert errors is no_update
+    row = db.get_table(table).get().iloc[0]
+    assert row["barcode"] == barcode + 1
+    reference = "barcode_user" if kind == "user" else "barcode_prod"
+    assert db._transaction_table.get().iloc[0][reference] == barcode + 1
+    preserved = ["paid_cents", "waste_cents", "is_guest"] if kind == "user" else ["current_stock", "initial_stock"]
+    assert row[preserved].tolist() == before.iloc[0][preserved].tolist()
 
 
 class TestDeleteUserByBarcode:
@@ -268,7 +364,7 @@ class TestEditBranch:
 
         # Assert
         assert result[0] is True  # new_user_modal opens
-        assert result[1] is False  # new_prod_modal stays closed
+        assert result[1] is no_update  # Do not trigger the other form's dismissal cleanup.
         # User form data: [barcode, name, rank, team, [1] if is_guest else [], paid]
         # Note: callback returns untyped data (strings) from get_users()
         assert result[2][0] == 1500  # barcode (untyped from get_users)
@@ -297,7 +393,7 @@ class TestEditBranch:
         )
 
         assert result[0] is True
-        assert result[1] is False
+        assert result[1] is no_update
         assert result[2][0] == 1500
         assert result[2][1] == "John Doe"
 
@@ -350,7 +446,7 @@ class TestEditBranch:
         )
 
         # Assert
-        assert result[0] is False  # new_user_modal stays closed
+        assert result[0] is no_update  # Do not trigger the other form's dismissal cleanup.
         assert result[1] is True  # new_prod_modal opens
         assert result[2] == [no_update] * user_col_count
         # Product form data is visible fields: [barcode, name, price, category, initial_stock]

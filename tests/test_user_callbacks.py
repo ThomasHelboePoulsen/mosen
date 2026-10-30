@@ -76,7 +76,7 @@ class TestUserCallbacksAddRow:
         vals = [1234, "Alice", "User", "Team B", 0]
         
         # Act
-        result, edit_value = add_row(1, vals, None)
+        add_row(vals, None)
         
         # Assert
         users = get_users()
@@ -93,7 +93,7 @@ class TestUserCallbacksAddRow:
         vals = [1600, "New User", "User", "Team B", 0]
         
         # Act
-        result, edit_value = add_row(1, vals, 1500)
+        add_row(vals, 1500)
         
         # Assert
         users = get_users()
@@ -106,7 +106,7 @@ class TestUserCallbacksAddRow:
         vals = [1234, "Alice", "User", "Team B", 0, 12.5]
 
         # Act
-        add_row(1, vals, None)
+        add_row(vals, None)
 
         # Assert
         users = get_users()
@@ -130,7 +130,7 @@ class TestUserCallbacksAddRow:
         vals = [1600, "New User", "User", "Team B", 0]
 
         # Act
-        add_row(1, vals, 1500)
+        add_row(vals, 1500)
 
         # Assert
         users = get_users()
@@ -154,7 +154,7 @@ class TestUserCallbacksAddRow:
         vals = [1600, "New User", "User", "Team B", 0, 30]
 
         # Act
-        add_row(1, vals, 1500)
+        add_row(vals, 1500)
 
         # Assert
         users = get_users()
@@ -201,7 +201,7 @@ class TestUserCallbacksAddRow:
         vals = [1500, "John", "Member", "A", 0, 10]
 
         # Act
-        add_row(1, vals, 1500)
+        add_row(vals, 1500)
 
         # Assert
         users = get_users()
@@ -230,32 +230,11 @@ class TestUserCallbacksAddRow:
         vals = [1234, "Alice", "User", "Team B", 0]
         
         # Act
-        result, edit_value = add_row(1, vals, None)
+        add_row(vals, None)
         
         # Assert
         trans = get_trans()
         assert trans.iloc[0]["barcode_user"] == "1500"
-
-    def test_add_row_with_n_clicks_none_returns_no_update(self, test_db):
-        # Arrange
-        vals = [1234, "Alice", "User", "Team B", 0]
-        
-        # Act
-        result, edit_value = add_row(None, vals, None)
-        
-        # Assert
-        assert result is no_update
-
-    def test_add_row_returns_updated_user_table(self, test_db):
-        # Arrange
-        vals = [1234, "Alice", "User", "Team B", 0]
-        
-        # Act
-        result, edit_value = add_row(1, vals, None)
-        
-        # Assert
-        assert isinstance(result, list)
-        assert len(result) == 1
 
 
 class TestOpenUserModal:
@@ -269,11 +248,12 @@ class TestOpenUserModal:
         ]))
 
         # Act
-        is_open, barcode = open_user_modal(1, 0, 0)
+        is_open, fields, edit_barcode = open_user_modal(1, 0, False)
         
         # Assert
         assert is_open is True
-        assert barcode == 1601
+        assert fields == [1601, None, None, None, [], 0]
+        assert edit_barcode is None
 
     @patch('src.tables.user_callbacks.ctx')
     def test_open_user_modal_default_barcode_when_empty(self, mock_ctx, test_db):
@@ -281,19 +261,37 @@ class TestOpenUserModal:
         mock_ctx.triggered_id = "new_user_btn"
         
         # Act
-        is_open, barcode = open_user_modal(1, 0, 0)
+        is_open, fields, edit_barcode = open_user_modal(1, 0, False)
         
         # Assert
         assert is_open is True
-        assert barcode == 1000
+        assert fields == [1000, None, None, None, [], 0]
+        assert edit_barcode is None
 
     @patch('src.tables.user_callbacks.ctx')
-    def test_open_user_modal_closes_on_confirm(self, mock_ctx, test_db):
+    def test_cancel_closes_modal_and_clears_edit_context(self, mock_ctx, test_db):
         # Arrange
-        mock_ctx.triggered_id = "confirm_user"
+        mock_ctx.triggered_id = "cancel_user"
         
         # Act
-        is_open, barcode = open_user_modal(0, 1, 0)
+        result = open_user_modal(0, 1, True)
         
         # Assert
-        assert is_open is False
+        assert result == (False, [no_update] * 6, None)
+
+    @patch('src.tables.user_callbacks.ctx')
+    def test_dismissal_clears_edit_context(self, mock_ctx, test_db):
+        mock_ctx.triggered_id = "new_user_modal"
+
+        result = open_user_modal(0, 0, False)
+
+        assert result == (no_update, [no_update] * 6, None)
+
+    @pytest.mark.parametrize("trigger", ["new_user_modal", "new_user_btn", "cancel_user"])
+    @patch('src.tables.user_callbacks.ctx')
+    def test_mounting_inputs_preserves_modal_and_edit_context(self, mock_ctx, test_db, trigger):
+        mock_ctx.triggered_id = trigger
+
+        result = open_user_modal(None, None, True)
+
+        assert result == (no_update, [no_update] * 6, no_update)

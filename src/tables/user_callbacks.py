@@ -1,4 +1,5 @@
 import pandas as pd
+from uuid import uuid4
 from src.barcode import BarcodePartition, is_barcode
 from dash import callback, Output, Input, State, html, ctx, ALL, no_update
 from src.database.data_connection import db_transaction_raises, upload_values, get_users, get_trans
@@ -15,28 +16,24 @@ def _kroner_to_cents(value, default=0):
 
 @callback(
     Output("new_user_modal", "is_open", allow_duplicate=True),
-    Output({"type": "user_input", "index": "inp_barcode_user"}, "value"),
+    Output({"type": "user_input", "index": ALL}, "value", allow_duplicate=True),
+    Output("edit_input", "value", allow_duplicate=True),
     Input("new_user_btn", "n_clicks"),
-    Input("confirm_user", "n_clicks"),
     Input("cancel_user", "n_clicks"),
+    Input("new_user_modal", "is_open"),
     prevent_initial_call=True,
 )
-def open_user_modal(new_user, confirm, cancel):
+def open_user_modal(new_user, cancel, is_open):
     trigger = ctx.triggered_id
-    if trigger is None:
-        return no_update, no_update
-
-    try:
+    if trigger == "new_user_btn" and new_user:
         table_data = Container.get(Database)._user_table.get()
-        barcode = max(table_data["barcode"]) + 1
-    except:
-        barcode = 1000
-    if trigger == "new_user_btn":
-        return True, barcode
-    elif trigger == "confirm_user":
-        return False, no_update
-    else:
-        return False, no_update
+        barcode = int(table_data["barcode"].max()) + 1 if not table_data.empty else 1000
+        return True, [barcode, None, None, None, [], 0], None
+    if trigger == "cancel_user" and cancel:
+        return False, [no_update] * 6, None
+    if trigger == "new_user_modal" and is_open is False:
+        return no_update, [no_update] * 6, None
+    return no_update, [no_update] * 6, no_update
 
 
 @callback(
@@ -50,62 +47,58 @@ def enable_confirm(inps, invalid_barcode):
     return True
 
 
-@callback_with_error_queue(2,
+@callback_with_error_queue(4,
     Output("user_table", "data"),
     Output("edit_input", "value", allow_duplicate=True),
+    Output("new_user_modal", "is_open", allow_duplicate=True),
+    Output("form_save_revision", "data", allow_duplicate=True),
     Input("confirm_user", "n_clicks"),
     State({"type": "user_input", "index": ALL}, "value"),
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
 def add_row_callback(n_clicks, vals, edit_barcode):
-    return add_row(n_clicks, vals, edit_barcode)
+    if not n_clicks:
+        return no_update, no_update, no_update, no_update
+    rows, = add_row(vals, edit_barcode)
+    return rows, None, False, uuid4().hex
 
 @db_transaction_raises
-def add_row(n_clicks, vals, edit_barcode):
+def add_row(vals, edit_barcode) -> list[dict]:
+    """Add or edit a user and return the updated table. Invalid data raises."""
     db = Container.get(Database)
     table = db._user_table
-    
-    if n_clicks is None:
-        return no_update, no_update
-    if n_clicks > 0:
-        data = table.get()
-        existing_waste = None
-        existing_paid = None
-        
-        if db.barcode_exists(edit_barcode, BarcodePartition.USER):
-            barcode_mask = data["barcode"]== int(edit_barcode)
-            if barcode_mask.any():
-                existing = data[barcode_mask].iloc[0]
-                existing_waste = int(existing["waste_cents"])
-                existing_paid = int(existing.get("paid_cents", 0))
-                data = data[~barcode_mask].copy()
+    data = table.get()
+    existing_waste = None
+    existing_paid = None
 
-        visible_columns = ["barcode", "name", "rank", "team", "is_guest"]
-        new_row = {name: val for name, val in zip(visible_columns, vals[:5])}
-        new_row["is_guest"] = 1 if new_row.get("is_guest") else 0
-        new_row["waste_cents"] = existing_waste if existing_waste is not None else -1
-        paid_default = existing_paid if existing_paid is not None else 0
-        new_row["paid_cents"] = (
-            _kroner_to_cents(vals[5], paid_default) if len(vals) > 5 else paid_default
-        )
+    if db.barcode_exists(edit_barcode, BarcodePartition.USER):
+        barcode_mask = data["barcode"]== int(edit_barcode)
+        if barcode_mask.any():
+            existing = data[barcode_mask].iloc[0]
+            existing_waste = int(existing["waste_cents"])
+            existing_paid = int(existing.get("paid_cents", 0))
+            data = data[~barcode_mask].copy()
 
-        data = pd.concat([data, pd.DataFrame([new_row])])
-        success, bad_rows = db.try_upload_values(data, "users") 
-        if not success:
-             raise ValueError(f"Failed to upload user data. Bad rows: {bad_rows}")
+    visible_columns = ["barcode", "name", "rank", "team", "is_guest"]
+    new_row = {name: val for name, val in zip(visible_columns, vals[:5])}
+    new_row["is_guest"] = 1 if new_row.get("is_guest") else 0
+    new_row["waste_cents"] = existing_waste if existing_waste is not None else -1
+    paid_default = existing_paid if existing_paid is not None else 0
+    new_row["paid_cents"] = (
+        _kroner_to_cents(vals[5], paid_default) if len(vals) > 5 else paid_default
+    )
 
+    data = pd.concat([data, pd.DataFrame([new_row])])
+    db.upload_values_raises(data, "users")
 
     if is_barcode(edit_barcode, BarcodePartition.USER) and int(vals[0]) != int(edit_barcode):
         trans = db._transaction_table.get()
         trans_mask = trans["barcode_user"]== int(edit_barcode)
         trans.loc[trans_mask, "barcode_user"] = int(vals[0])
-        success, bad_rows = db.try_upload_values(trans, "transactions")
-        if not success:
-             raise ValueError(f"Failed to upload transaction data. Bad rows: {bad_rows}")
+        db.upload_values_raises(trans, "transactions")
 
-
-    return table.get().to_dict(orient="records"), None
+    return table.get().to_dict(orient="records")
 
 
 @callback(

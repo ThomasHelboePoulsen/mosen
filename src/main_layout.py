@@ -834,6 +834,7 @@ def layout_func():
             top_user_chart_modal(),
             dcc.Store(id="update_settings"),
             dcc.Store(id="transaction_removal_revision"),
+            dcc.Store(id="form_save_revision"),
             dcc.Store(id="retain_focus_main", data=None),
             dcc.Store(id="retain_focus_prod", data=None),
             dcc.Store(id="retain_focus_password", data=None),
@@ -953,34 +954,31 @@ def toggle_checkboxes(n_clicks, current_values):
     Output("economy_settings", "children"),
     Input("setting_tabs", "value"),
     Input("settings_modal", "is_open"),
-    Input("confirm_prod", "n_clicks"),
-    Input("confirm_user", "n_clicks"),
     Input("delete_data_btn", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
     Input("confirm_payments", "n_clicks"),
     Input("transaction_removal_revision", "data"),
+    Input("form_save_revision", "data"),
 )
 def update_settings_layout(
     trigger,
     settings_open,
-    prods_trigger,
-    user_trigger,
     reset_trigger,
     stock_trigger,
     payments_trigger,
     transaction_removal_revision=None,
+    form_save_revision=None,
 ):
     #Currently works by guessing that any db changes are done 1 sec after a callback possibly changing anything
     #Ideally this is moved to only trigger after a callback sucessfully changes db.
     if all(
         action is None
         for action in [
-            prods_trigger,
-            user_trigger,
             reset_trigger,
             stock_trigger,
             payments_trigger,
             transaction_removal_revision,
+            form_save_revision,
             settings_open,
         ]
     ):

@@ -220,13 +220,13 @@ def test_new_user_uses_preview_fallback_and_edit_preserves_waste(test_db):
         ]
     )
     update_values(waste_cents=600)
-    add_row(1, [1001, "B", "R", "T", 0], None)
+    add_row([1001, "B", "R", "T", 0], None)
     users = test_db._user_table.get()
     new_user = users[users["barcode"] == 1001].iloc[0]
     assert new_user["waste_cents"] == -1
     assert get_preview_user_waste_cents(new_user, 600, len(users)) == 450
 
-    add_row(1, [2000, "A", "R", "T", 0], 1000)
+    add_row([2000, "A", "R", "T", 0], 1000)
     edited = test_db._user_table.get()
     edited = edited[edited["barcode"] == 2000].iloc[0]
     assert edited["waste_cents"] == 600

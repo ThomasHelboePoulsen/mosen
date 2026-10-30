@@ -564,8 +564,9 @@ def test_removing_final_transaction_refreshes_live_calculations(
     assert get_waste_table()[0]["Waste"] == 2
 
 
-def test_transaction_removal_revision_refreshes_settings_layouts(
-    monkeypatch, temp_db
+@pytest.mark.parametrize("revision", ["transaction_removal_revision", "form_save_revision"])
+def test_success_revision_refreshes_settings_layouts(
+    monkeypatch, temp_db, revision
 ):
     # Arrange
     marker = object()
@@ -576,7 +577,7 @@ def test_transaction_removal_revision_refreshes_settings_layouts(
 
     # Act
     result = main_layout.update_settings_layout(
-        None, False, None, None, None, None, None, 1
+        None, None, None, None, None, **{revision: 1}
     )
 
     # Assert

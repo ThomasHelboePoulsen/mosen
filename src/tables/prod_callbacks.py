@@ -1,4 +1,5 @@
 import pandas as pd
+from uuid import uuid4
 from datetime import datetime
 from dash import callback, Output, Input, State, html, ctx, ALL, MATCH, no_update
 from src.barcode import BarcodePartition, is_barcode
@@ -18,25 +19,24 @@ PRODUCT_FORM_COLUMNS = ["barcode", "name", "price", "category", "initial_stock"]
 
 @callback(
     Output("new_prod_modal", "is_open", allow_duplicate=True),
-    Output({"type": "prod_input", "index": "inp_barcode_prod"}, "value"),
+    Output({"type": "prod_input", "index": ALL}, "value", allow_duplicate=True),
+    Output("edit_input", "value", allow_duplicate=True),
     Input("new_prod_btn", "n_clicks"),
-    Input("confirm_prod", "n_clicks"),
     Input("cancel_prod", "n_clicks"),
+    Input("new_prod_modal", "is_open"),
     prevent_initial_call=True,
 )
-def open_prod_modal(new_prod, confirm, cancel):
-    try:
-        table_data = Container.get(Database)._product_table.get()
-        barcode = max(table_data["barcode"]) + 1
-    except:
-        barcode = 101
+def open_prod_modal(new_prod, cancel, is_open):
     trigger = ctx.triggered_id
-    if trigger == "new_prod_btn":
-        return True, barcode
-    elif trigger == "confirm_prod":
-        return False, barcode
-    else:
-        return False, barcode
+    if trigger == "new_prod_btn" and new_prod:
+        table_data = Container.get(Database)._product_table.get()
+        barcode = int(table_data["barcode"].max()) + 1 if not table_data.empty else 101
+        return True, [barcode, None, None, None, None], None
+    if trigger == "cancel_prod" and cancel:
+        return False, [no_update] * 5, None
+    if trigger == "new_prod_modal" and is_open is False:
+        return no_update, [no_update] * 5, None
+    return no_update, [no_update] * 5, no_update
 
 
 @callback(
@@ -50,68 +50,49 @@ def enable_confirm(inps, invalid_barcode):
     return True
 
 
-def add_row(n_clicks, stock_trigger, vals, edit_barcode):
-    """add or edit a product. edit_barcode allows changing the barcode of a product, otherwise just upsert on barcode"""
+@db_transaction_raises
+def add_row(vals, edit_barcode) -> list[dict]:
+    """Add or edit a product and return the updated table. Invalid data raises."""
     db = Container.get(Database)
     table = db._product_table
-    
-    if n_clicks is None:
-        return no_update, no_update
-    if n_clicks > 0:
-        data = table.get()
-        
-        if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
-            barcode_mask = data["barcode"] == int(edit_barcode)
-            data = data[~barcode_mask].copy()
+    data = table.get()
 
-        form_row = {
-            column: val for column, val in zip(PRODUCT_FORM_COLUMNS, vals)
-        }
-        existing_current_stock = None
-        if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
-            existing = table.get()
-            existing = existing[existing["barcode"] == int(edit_barcode)]
-            existing_current_stock = int(existing.iloc[0]["current_stock"])
-            
-        new_row = {
-            **form_row,
-            "current_stock": (
-                existing_current_stock
-                if existing_current_stock is not None
-                else form_row["initial_stock"]
-            ),
-        }
-        
-        data = pd.concat([data, pd.DataFrame([new_row])])
-        success, bad_rows = db.try_upload_values(data, "prods") 
-        if not success:
-             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
+    new_row = dict(zip(PRODUCT_FORM_COLUMNS, vals))
+    new_row["current_stock"] = new_row["initial_stock"]
+    if db.barcode_exists(edit_barcode, BarcodePartition.PRODUCT):
+        barcode_mask = data["barcode"] == int(edit_barcode)
+        new_row["current_stock"] = int(data.loc[barcode_mask, "current_stock"].iloc[0])
+        data = data[~barcode_mask].copy()
+
+    data = pd.concat([data, pd.DataFrame([new_row])])
+    db.upload_values_raises(data, "prods")
 
     if is_barcode(edit_barcode, BarcodePartition.PRODUCT):
         trans = db.get_table("transactions").get()
         trans.loc[trans["barcode_prod"] == int(edit_barcode), "barcode_prod"] = int(
             vals[0]
         )
-        success, bad_rows = db.try_upload_values(trans, "transactions")
-        if not success:
-             raise ValueError(f"Failed to upload product data. Bad rows: {bad_rows}")
+        db.upload_values_raises(trans, "transactions")
 
-    return table.get().to_dict(orient="records"), None
+    return table.get().to_dict(orient="records")
 
 
 @callback_with_error_queue(
-    2,
+    4,
     Output("prod_table", "data"),
     Output("edit_input", "value", allow_duplicate=True),
+    Output("new_prod_modal", "is_open", allow_duplicate=True),
+    Output("form_save_revision", "data", allow_duplicate=True),
     Input("confirm_prod", "n_clicks"),
-    Input("confirm_new_stock", "n_clicks"),
     State({"type": "prod_input", "index": ALL}, "value"),
     State("edit_input", "value"),
     prevent_initial_call=True,
 )
-@db_transaction_raises
-def add_row_callback(n_clicks, stock_trigger, vals, edit_barcode):
-    return add_row(n_clicks, stock_trigger, vals, edit_barcode)
+def add_row_callback(n_clicks, vals, edit_barcode):
+    if not n_clicks:
+        return no_update, no_update, no_update, no_update
+    rows, = add_row(vals, edit_barcode)
+    return rows, None, False, uuid4().hex
 
 
 @callback(

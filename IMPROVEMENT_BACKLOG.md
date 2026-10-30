@@ -36,152 +36,13 @@ Code locations below use file paths and function names. Function names are the p
 | 04 | ~~Remove optional payment-export rounding~~ | Small | **Done** |
 | 05 | ~~Prevent product imports from removing purchased products~~ | Small | **Done** |
 | 06 | ~~Preserve the visible basket after failed checkout~~ | Small to medium | **Done** |
-| 07 | Clear stale edit state on Create and Cancel | Small to medium | Confirmed user bug; analogous product path |
+| 07 | ~~Clear stale edit state on Create and Cancel~~ | Small to medium | **Done** |
 | 08 | Validate numeric values before table replacement | Medium | Confirmed bug in shared table logic |
 | 09 | Refresh settings after successful changes | Medium | Confirmed callback/design issue |
 | 10 | Make backups consistent without holding up buying | Medium | Confirmed unsafe copy; implementation proposal |
 | 12 | Show the current basket's price and item count | Small to medium | Optional usability idea |
 | 17 | Validate transaction references once per batch | Medium | Deferred admin performance work |
 
-## 01. Fix Reset data
-
-**Status:** Done (12 October 2026). **Evidence:** Reproduced through the reset callback with a temporary database and keyboard functions patched before applying the fix.
-
-**Issue:** Reset fails with `near "IF": syntax error`, and the existing data remains.
-
-**Why it matters:** Administrators cannot reliably clear a finished trip or recover to a fresh setup.
-
-**Cause:** `reset_all_tables()` constructs `DROP TABLE {table} IF EXISTS`, which has the SQL keywords in the wrong order.
-
-**Proposed change:** Correct it to `DROP TABLE IF EXISTS {table}`. Check that the reset consistently uses the configured database, closes connections it owns, and does not leave a partially reset database on a write failure. Follow the existing transaction pattern. Preserve the intended kiosk exit behavior.
-
-**Where:** `src/database/data_connection.py`: `reset_all_tables()`, `Database.init()`; `src/main_page_callbacks.py`: `reset_database()`.
-
-**Acceptance:** Reset a populated temporary database and verify all five tables are reset as intended, settings defaults are restored when reopened, and a custom database path is respected. Stub keyboard/exit functions; never test reset against the real trip database. Relevant tests: `tests/test_data_connection.py`, `tests/test_main_page_callbacks.py`.
-
-**Implemented:** Corrected the DROP syntax. Reset now drops all five tables and calls `Database.init()` to recreate them and restore settings defaults in one transaction, retaining the registered database and its configured path. `Connection.begin_transaction()` starts the SQL transaction once for its owner; callers do not need their own BEGIN guards. `Database.init()` and `_create_tables()` use the common transaction executor, which closes only owned connections and preserves an enclosing transaction. Cache refresh after rollback is performed only by the transaction owner, after the database is restored. Table creation skips rollback cache refresh because it leaves caches untouched and may fail while tables are missing. Keyboard unhooking and the existing Alt+F4 exit run after a successful commit; write failures restore stored rows and caches and flow through the existing callback error queue.
-
-**Verification:** Final verification with `.\.venv\Scripts\python.exe -m pytest -q --ignore=tests/test_barcode_scan_performance.py` passed **372 tests**, including 15 new regressions for populated custom-path reset, defaults after reopening, connection cleanup/ownership, rollback during DROP/recreation/default writes, reset dialog success/cancel/error behavior, standalone creation failures preserving the original SQL error, and owner-only cache refresh for nested exceptions and rollback results. A schema-only rollback test verifies that the common transaction helper rolls back DROP/CREATE statements even after a nested commit request. The 12 barcode-performance cases passed in the preceding full run of 382 tests, before the final rollback-only change to reuse `init()`. Reset tests use isolated temporary databases and stubbed keyboard actions.
-
-## 02. Require unique product names
-
-**Status:** Done (12 October 2026). **Evidence:** Before the fix, two products named "Cola" were accepted and created stock fields with the same ID, which prevented Dash from loading the layout.
-
-**Issue:** Duplicate product names could prevent the app from loading, including after a restart.
-
-**Why it matters:** Importing or saving conflicting product names should fail before it can make the machine unusable. Product names must remain visible in the existing stock controls.
-
-**Cause:** The stock dialog identifies each input by product name. Duplicate names therefore produced duplicate input IDs.
-
-**Chosen change:** Require unique product names during product writes. Compare names as stored strings, preserving case and whitespace. Reject duplicate names before writing, including conflicts within an import or append batch and conflicts with existing products during append. An existing product can keep its own name when edited. Keep the stock controls and their callback signatures unchanged.
-
-**Where:** `src/database/tables/product.py`: `ProductTable.is_valid_batch()`; existing callers in `BaseTable.set()` and `BaseTable.append()`.
-
-**Acceptance:** Product creation, editing and imports reject duplicate names and report the offending rows. Failed batches preserve both stored products and the cache. Editing a product while retaining its own name still succeeds. No name validation is added to basket opening, product scanning or checkout.
-
-**Implemented:** Added a product-specific name check to the existing batch validation. It covers replacement and append writes without changing shared table code, the database schema or scan/checkout logic. Names that become the same stored string, such as numeric `123` and text `"123"`, are treated as duplicates. Validation runs only for product writes.
-
-**Verification:** `.\.venv\Scripts\python.exe -m pytest -q --ignore=tests/test_barcode_scan_performance.py` passed **377 tests**, including five new cases for duplicate names, replacement/append rejection, conflicts with existing products and preservation of stored rows/cache. Existing product-edit tests verify that retaining a product's own name remains valid. The three basket-opening, product-scan and checkout tests in `tests/test_barcode_scan_performance.py` also passed their existing callback-workflow limits of 300 ms, 100 ms and 400 ms respectively.
-
-## 03. Protect early payments during direct user deletion
-
-**Status:** Done (16 October 2026). **Evidence:** Before the fix, callback regressions confirmed that deletion reached the user-table replacement for users with no transactions and `paid_cents` values of 5000, 1, -1 and -5000.
-
-**Issue:** Direct deletion silently removes a recorded early payment.
-
-**Why it matters:** An administrator can lose payment bookkeeping through an ordinary edit/delete action. CSV replacement already prevents the equivalent removal.
-
-**Cause:** `edit_new_data_modals()` checks whether the user has transactions, but does not check their payment. `_validate_user_removals()` already checks both conditions for imports.
-
-**Proposed change:** Reuse the existing removal guard for the selected user before mutation. Protect any nonzero `paid_cents`, matching the import behavior. Keep the existing product deletion guard.
-
-**Where:** `src/main_page_callbacks.py`: `edit_new_data_modals()`, `_validate_user_removals()`.
-
-**Acceptance:** Deleting a user with an early payment and no purchases displays an error and changes nothing. A user with neither remains deletable. Verify correctly shaped error outputs. Relevant tests: `tests/test_edit_data_modals.py`, `tests/test_main_page_callbacks.py`.
-
-**Implemented:** Direct user deletion now passes only the selected typed user row to `_validate_user_removals()` before any table replacement. The shared guard rejects any nonzero payment, including negative values, and still protects users with transactions. Imports and direct deletion use the same guard and error messages. Product deletion protection and transaction/error-queue handling remain unchanged.
-
-**Verification:** `.\.venv\Scripts\python.exe -m pytest -q tests/test_edit_data_modals.py tests/test_main_page_callbacks.py` passed **96 tests**, including eight new regression cases. Tests cover positive and negative payments, one-cent values, unchanged user cache and persisted rows after rejection, correctly shaped error outputs, and successful deletion of an unpaid user while preserving another user's payment with integer and string barcode inputs. Import regressions also verify negative-payment protection. Existing user/product transaction guards, ordinary deletion and missing-barcode behavior pass. Tests use isolated temporary databases; the local venv required escalated execution because its launcher could not start in the sandbox.
-
-## 04. Remove optional payment-export rounding
-
-**Status:** Done (12 October 2026). **Evidence:** Reproduced before the change using an isolated temporary database and a real Excel export: rounding "Up" to 10 turned a 20 DKK purchase with no waste into 30 DKK.
-
-**Issue:** The rounding feature can overcharge amounts that are already exact multiples, and its practical use is unclear.
-
-**Why it matters:** Payment files should contain understandable calculated amounts. Removing unused controls also simplifies the export dialog.
-
-**Cause:** The "Up" formula always adds an increment, even when the remainder is zero. Two dropdowns and callback parameters exist solely for this optional final rounding step.
-
-**Proposed change:** Remove the Up/Down/Nearest and increment controls, their callback States/parameters, and the final whole-DKK rounding branch. Remove imports only if they become unused. Preserve waste allocation's separate rounding policy and the existing added-income eligibility/distribution policy. Do not introduce a different surcharge policy as part of this small removal. Check normal currency display precision, including fractional-cent shares produced by added income, and record any separate precision issue discovered.
-
-**Where:** `src/modals.py`: `export_payments_modal()`; `src/main_page_callbacks.py`: `control_payments_modal()`.
-
-**Acceptance:** 20 DKK exports as 20; 12.50 DKK remains 12.50. Existing stock-freshness checks, settled-user behavior, added income, waste allocation and real Excel output still work. Update callback-call tests for the new signature. Relevant tests: `tests/test_waste_allocation.py`, `tests/test_main_page_callbacks.py`.
-
-**Implemented:** Removed both rounding dropdowns, their callback States and parameters, and the final whole-DKK rounding branch. Removed the unused `builtins` import and dropdown CSS. The dialog retains Add income and Confirm. Waste allocation still applies its own rounding policy, and added income is still shared equally only among users with purchases and a positive amount due, including eligible guests. Stock-freshness checks and settled-user handling are unchanged.
-
-**Verification:** `.\.venv\Scripts\python.exe -m pytest -q tests/test_waste_allocation.py tests/test_main_page_callbacks.py` passed **116 tests**. The broader suite, `.\.venv\Scripts\python.exe -m pytest -q --ignore=tests/test_barcode_scan_performance.py`, passed **379 tests**. Real Excel regressions verify unchanged 20 DKK and 12.50 DKK amounts, equal added-income shares, exclusion of settled users and non-buyers with allocated waste, inclusion of eligible guests, and separately rounded persisted waste. Existing export stock checks and warning paths pass with the new callback signature. An isolated Dash app served layout and dependency endpoints successfully and confirmed that the payment callback no longer requests rounding States and the modal has no rounding dropdowns. Performance tests were not rerun because this change does not touch the purchase workflow.
-
-**Separate precision follow-up:** Existing added-income division can produce fractional-cent amounts, and monetary Excel cells use `General` formatting rather than a fixed two-decimal display. With optional rounding already disabled, three buyers owing 12.50 DKK each and 0.01 DKK added income exported approximately 12.50333333333333 DKK each. Plain 12.50 DKK exports as numeric 12.5 without losing value. This issue remains open: assigning cent remainders needs a separate distribution decision, so this removal does not round individual shares or change eligibility.
-
-## 05. Prevent product imports from removing purchased products
-
-**Status:** Done (16 October 2026). **Evidence:** Before the fix, isolated callback regressions reproduced product replacements reducing purchases/revenue from 22.50 DKK to 12.50 DKK, 10 DKK or zero when one or both purchased products were omitted.
-
-**Issue:** Importing products can leave existing transactions referring to a product that no longer exists. Those purchases are subsequently priced at zero.
-
-**Why it matters:** An ordinary product-list replacement can silently alter accounting without touching the transaction file.
-
-**Cause:** Product imports replace the table. Import validation protects removal of users, but has no equivalent product-reference check. Revenue and income calculations assign zero to unknown product barcodes.
-
-**Proposed change:** Before replacing products, reject an import omitting any product barcode referenced by existing transactions. Explain which purchased products must remain. Allow removal of unused products, normal edits/additions, and initial imports. Keep the safeguard narrow; transaction import itself remains an administrator responsibility. Do not redesign historical pricing or store price snapshots in this task.
-
-**Where:** `src/main_page_callbacks.py`: `update_settings()`, adjacent to `validate_user_import()`; `src/analytics/trans_calculations.py`: `get_income()`, `get_revenue()` for the observed consequence.
-
-**Acceptance:** An unsafe product replacement is rejected without changing products, transactions or accounting. A replacement retaining purchased barcodes succeeds, as does removing an unused product. Relevant tests: `tests/test_main_page_callbacks.py`.
-
-**Implemented:** Added `validate_product_import()` beside the user import guard. It compares typed existing products and transaction references with imported barcodes and rejects removal of purchased products, listing their names and barcodes. Validation runs in the existing import transaction before backup or settings/data writes and uses the existing shaped error response. Initial imports, additions, edits (including price changes), removal of unused products and header-only imports keep their existing behavior. Table validation and accounting calculations are unchanged.
-
-**Verification:** `.\.venv\Scripts\python.exe -m pytest -q tests/test_main_page_callbacks.py tests/test_edit_data_modals.py tests/test_product_table.py tests/test_product_table_properties.py` passed **126 tests**. Seven new regression cases cover rejection of one or multiple purchased-product removals, clear product identification, unchanged cached data/settings and persisted products, preserved revenue/income, correctly shaped error outputs, allowed edits/additions/unused-product removal, initial imports, header-only imports and missing barcode headers. A read-only review found no correctness or simplicity issues. Tests use temporary databases; the local venv required escalated execution because its launcher could not start in the sandbox.
-
-## 06. Preserve the visible basket after failed checkout
-
-**Status:** Done (22 October 2026). **Evidence:** Before the fix, callback regressions reproduced the display clearing for forced append and basket-clear failures in both callback orders, while pending purchases remained in the database.
-
-**Issue:** The basket modal stays open and the red error appears, but the product list looks empty despite products still being pending.
-
-**Why it matters:** After dismissing the error, a person may scan the same products again or misunderstand what a retry will purchase.
-
-**Cause:** Scanning the user's barcode triggers both checkout and `new_trans()`. The latter clears the displayed list independently of checkout success.
-
-**Chosen change:** Render the reset cached basket in the opener and return its contents together with the open flag. Preserve the display during checkout and when the modal closes. Refreshing from a callback triggered after opening briefly exposed the previous basket, as reported during manual use; supplying both properties in one response removes that intermediate state. Preserve existing rollback and duplicate-checkout protection.
-
-**Where:** `src/trans_layout.py`: `new_trans()`, `open_trans_modal()`, `checkout_cart_to()`.
-
-**Acceptance:** Forced append/clear failures preserve the open modal, visible names/counts and database basket, and show the error. Retrying records each item once. The fresh basket's contents arrive in the same response that opens the modal, without a later display callback. Relevant tests: `tests/test_open_trans_modal.py`, `tests/test_transaction_rollback_behavior.py`; check both callbacks, not just database rollback.
-
-**Implemented:** `open_trans_modal()` renders the cached basket after a successful reset and returns it with `is_open=True` as a fourth normal output. This uses Dash's duplicate-output pattern; checkout, validation and error paths leave the displayed contents unchanged. Product scans reuse the same rendering helper in `new_trans()`, and user checkout scans preserve the display. The modal's open flag is now a `State` of that callback, so opening/closing does not trigger a display update or delay product scans behind the modal callback. Scans received while the modal is closed return `no_update` before validating barcode state. Existing checkout transactions, rollback and duplicate-checkout protection are unchanged.
-
-**Verification:** `.\.venv\Scripts\python.exe -m pytest -q --ignore=tests/test_barcode_scan_performance.py` passed **404 tests**, including eleven new cases covering append/clear failures, preserved visible names/counts and stored rows, retry without duplicate purchases, zero-padded checkout barcodes, fresh opening/reset failure, product scans/multipliers/removal, reset-before-render ordering, fresh contents in the opening response, and scans after closing. Separately, all **12 barcode performance tests** passed their existing limits, with opening display work included in the opener and product callbacks running concurrently. An isolated temporary-database Dash app passed real HTTP checks with a deliberately delayed renderer: fresh basket children and `is_open=True` were supplied in the same response. Dependency checks confirmed that modal opening no longer triggers `new_trans()`, and scan/checkout/close/reopen responses remained correct. Independent read-only review found no blocking issues. Timing tests measure server callbacks, excluding browser/HTTP latency; visual frame/scanner verification remains unperformed because no browser controls were available. Tests used the local venv with escalated execution because its Windows launcher could not start in the sandbox.
-
-**Test cleanup:** Reduced the added block from 211 to 59 lines across five direct tests. Append/clear failure and retry checks now share the existing checkout-failure test. The focused command `.\.venv\Scripts\python.exe -m pytest -q tests/test_open_trans_modal.py tests/test_transaction_rollback_behavior.py` passed **38 tests** after cleanup. The full-suite and performance results above predate this test-only cleanup.
-
-## 07. Clear stale edit state on Create and Cancel
-
-**Status:** Open. **Evidence:** Confirmed for users; product callbacks have the analogous stale-edit pattern and need their own reproduction.
-
-**Issue:** Edit an existing person, cancel, then Create and Confirm a new person: the original can disappear and their purchases and payment can move to the new barcode.
-
-**Why it matters:** This is accidental reassignment of accounting data, not merely a form display problem.
-
-**Cause:** The shared `edit_input` barcode survives Cancel/Create. Save callbacks interpret that barcode as an active edit. Create initializes only part of the form, leaving previous context or values available.
-
-**Proposed change:** Clear active edit context on explicit Create and Cancel, including other dismissal paths that exist. Initialize all creation fields to fresh defaults. Preserve context during an actual Edit, failed-save retries, and deliberate barcode changes. Do not clear edit context on the raw Confirm click before the save consumes it.
-
-**Where:** `src/tables/user_callbacks.py`: `open_user_modal()`, `add_row_callback()`, `add_row()`; equivalent functions in `src/tables/prod_callbacks.py`; `src/main_page_callbacks.py`: `edit_new_data_modals()`; `src/modals.py`: `edit_modal()`.
-
-**Acceptance:** Edit -> Cancel -> Create -> Confirm adds a separate user/product and leaves the original record, payments, purchases and stock unchanged. New user defaults include `paid_cents=0`, `waste_cents=-1` and the default guest flag. Actual edits and failed-save retries still work. Relevant tests: `tests/test_user_callbacks.py`, `tests/test_prod_callbacks.py`, `tests/test_edit_data_modals.py`.
 
 ## 08. Validate numeric values before table replacement
 
@@ -211,7 +72,7 @@ Code locations below use file paths and function names. Function names are the p
 
 **Proposed change:** Keep forms, action controls, search input and modals mounted. Emit unique change revisions from successful mutation callbacks, with the response returned after commit. Use those revisions to refresh table data/tooltips, income backing rows, waste figures and a small economy-summary container. Refresh on settings opening to capture purchases since the previous visit. Populate stock rows and study-user choices when their dialogs open. Remove the sleep and whole-tab replacement.
 
-**Dependencies and cautions:** Revalidate items 02, 06 and 07 after this change. Remove the unrelated `confirm_new_stock` trigger from the product-save callback; stock saving should have one owner. `update_settings.data=True` currently also occurs after invalid imports roll back, so it is not a reliable success signal. Payment export can commit while displaying a warning; such committed changes still need refresh. Failed saves should preserve the open form and its input. Handle tables that were initially empty as well as table columns and tooltips.
+**Dependencies and cautions:** Revalidate items 02, 06 and 07 after this change. Item 07 added `form_save_revision` for successful user/product saves and removed the unrelated `confirm_new_stock` trigger from product saving; extend that success-driven approach to the remaining mutations. `update_settings.data=True` currently also occurs after invalid imports roll back, so it is not a reliable success signal. Payment export can commit while displaying a warning; such committed changes still need refresh. Failed saves should preserve the open form and its input. Handle tables that were initially empty as well as table columns and tooltips.
 
 **Where:** `src/main_layout.py`: `update_settings_layout()`, the settings layout builders; mutation callbacks in `src/main_page_callbacks.py` and `src/tables/`; existing `transaction_removal_revision` demonstrates part of the approach.
 
