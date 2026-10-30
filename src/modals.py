@@ -6,7 +6,7 @@ from src.components import get_table
 from src.version import APP_VERSION
 
 USER_COLS = ["rank", "team"]
-DOCUMENTATION_URL = "https://thomashelboepoulsen.dk/mosen/docs"
+DOCUMENTATION_URL = f"https://thomashelboepoulsen.dk/mosen/docs/?from=mosen-{APP_VERSION}"
 
 user_body = [
     dbc.Input(
