@@ -37,7 +37,7 @@ Code locations below use file paths and function names. Function names are the p
 | 05 | ~~Prevent product imports from removing purchased products~~ | Small | **Done** |
 | 06 | ~~Preserve the visible basket after failed checkout~~ | Small to medium | **Done** |
 | 07 | ~~Clear stale edit state on Create and Cancel~~ | Small to medium | **Done** |
-| 08 | Validate numeric values before table replacement | Medium | Confirmed bug in shared table logic |
+| 08 | ~~Validate numeric values before table replacement~~ | Medium | **Done** |
 | 09 | Refresh settings after successful changes | Medium | Confirmed callback/design issue |
 | 10 | Make backups consistent without holding up buying | Medium | Confirmed unsafe copy; implementation proposal |
 | 12 | Show the current basket's price and item count | Small to medium | Optional usability idea |
@@ -46,7 +46,7 @@ Code locations below use file paths and function names. Function names are the p
 
 ## 08. Validate numeric values before table replacement
 
-**Status:** Open. **Evidence:** A quoted CSV price of `"12,50"` committed successfully, then typed product reads raised a conversion error.
+**Status:** Done. **Evidence:** A quoted CSV price of `"12,50"` committed successfully, then typed product reads raised a conversion error.
 
 **Issue:** Import validation can accept values that the application cannot subsequently read using its declared column types.
 
@@ -59,6 +59,8 @@ Code locations below use file paths and function names. Function names are the p
 **Where:** `src/database/tables/base_table.py`: `is_valid_batch()`, `set()`, `append()`, `get()`; `src/database/tables/column.py`; product/user column definitions.
 
 **Acceptance:** Malformed numbers, infinity and fractional integer fields fail before writes; typed reads continue working. Valid numeric inputs, optional defaults and existing sentinel values still round-trip. Check both replacement and append. Relevant tests: `tests/test_column_system.py`, `tests/test_product_table.py`, `tests/test_product_table_properties.py`, `tests/test_main_page_callbacks.py`, transaction/atomicity tests affected by shared validation.
+
+**Completed:** Added declared-type numeric validation to shared batch validation, including finite float checks and whole-value integer checks. Replacement and append now reject malformed numeric values before writing, while valid defaults and sentinels remain supported. Verified with focused column-system tests.
 
 ## 09. Refresh settings after successful changes
 

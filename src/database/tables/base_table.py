@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+import math
+import numbers
 import sqlite3
 import uuid
 import pandas as pd
@@ -81,12 +83,37 @@ class BaseTable(ABC):
                 val = row.get(col.name)
                 if val is None or str(val).strip() == "":
                     return False
-        
+
+        if not self._validate_numeric_values(row):
+            return False
+
         if self._check_primary_key_duplicates(row, all_rows):
             return False
         
         for col in self.columns:
             if type(col) == BarcodeColumn and not col.is_valid_barcode(row[col.name]):
+                return False
+
+        return True
+
+    def _validate_numeric_values(self, row: dict) -> bool:
+        """Check that values can be read back using their declared types."""
+        for col in self.columns:
+            if col.name not in row or col.dtype not in (int, float):
+                continue
+
+            value = row[col.name]
+            try:
+                if col.dtype is int:
+                    converted = int(value)
+                    if isinstance(value, numbers.Number):
+                        if not math.isfinite(float(value)) or value != converted:
+                            return False
+                else:
+                    converted = float(value)
+                    if not math.isfinite(converted):
+                        return False
+            except (TypeError, ValueError, OverflowError):
                 return False
 
         return True

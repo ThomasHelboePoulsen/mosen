@@ -114,6 +114,86 @@ class TestOptionalColumnFilling:
         assert df.iloc[0]["is_guest"] == 1 or df.iloc[0]["is_guest"] == "1"
 
 
+class TestNumericValueValidation:
+    def test_set_rejects_malformed_numeric_values_before_replacement(self, test_db):
+        table = ProductTable(test_db._connection)
+        valid_row = {
+            "barcode": 123,
+            "name": "Beer",
+            "price": 5.0,
+            "category": "Beverage",
+            "current_stock": 10,
+            "initial_stock": 20,
+        }
+        table.set([valid_row])
+        initial_state = table.get_untyped()
+
+        invalid_row = {
+            **valid_row,
+            "barcode": 124,
+            "price": "12,50",
+        }
+
+        result, bad_rows = table.set([invalid_row])
+
+        assert result == table.table_name
+        assert bad_rows == [invalid_row]
+        pd.testing.assert_frame_equal(table.get_untyped(), initial_state)
+
+    @pytest.mark.parametrize(
+        "column_name,value",
+        [
+            ("price", float("inf")),
+            ("price", "nan"),
+            ("current_stock", 1.5),
+            ("initial_stock", "2.5"),
+        ],
+    )
+    def test_append_rejects_non_finite_and_fractional_values(self, test_db, column_name, value):
+        table = ProductTable(test_db._connection)
+        existing_row = {
+            "barcode": 123,
+            "name": "Beer",
+            "price": 5.0,
+            "category": "Beverage",
+            "current_stock": 10,
+            "initial_stock": 20,
+        }
+        table.set([existing_row])
+
+        invalid_row = {
+            **existing_row,
+            "barcode": 124,
+            "name": "Soda",
+            column_name: value,
+        }
+
+        result, bad_rows = table.append([invalid_row])
+
+        assert result == table.table_name
+        assert bad_rows == [invalid_row]
+        assert len(table.get()) == 1
+
+    def test_valid_integer_values_and_sentinels_round_trip(self, test_db):
+        table = UserTable(test_db._connection)
+        row = {
+            "barcode": "1001",
+            "name": "Alice",
+            "rank": "Manager",
+            "team": "Sales",
+            "waste_cents": -1,
+            "paid_cents": 0.0,
+        }
+
+        result, bad_rows = table.set([row])
+
+        assert result == "success"
+        assert bad_rows == []
+        typed = table.get().iloc[0]
+        assert typed["waste_cents"] == -1
+        assert typed["paid_cents"] == 0
+
+
 class TestColumnIntegration:
     """Integration tests for the Column system."""
 
