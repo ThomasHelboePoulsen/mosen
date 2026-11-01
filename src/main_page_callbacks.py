@@ -536,6 +536,8 @@ def control_payments_modal(open_trigger, close_trigger, added_value):
     if trigger == "export_payments_btn" and open_trigger:
         return True, no_update
     elif trigger == "confirm_payments" and close_trigger:
+        if added_value is None:
+            added_value = 0
         db = Container.get(Database)
         warning = _validate_payment_export_stock_freshness()
         if warning.block_export:

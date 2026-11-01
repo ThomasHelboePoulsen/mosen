@@ -866,7 +866,8 @@ def test_payment_export_shares_added_income_only_between_buyers_with_amounts_due
 
 
 @pytest.mark.parametrize("price", [20, 12.5])
-def test_payment_export_uses_excel_file_without_rounding(test_db, monkeypatch, price):
+@pytest.mark.parametrize("added_value", [0, None])
+def test_payment_export_uses_excel_file_without_rounding(test_db, monkeypatch, price, added_value):
     # Arrange
     add_users(
         [{"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0}]
@@ -899,7 +900,7 @@ def test_payment_export_uses_excel_file_without_rounding(test_db, monkeypatch, p
 
     # Act
     result = main_page_callbacks.control_payments_modal(
-        None, 1, 0, []
+        None, 1, added_value, []
     )
 
     # Assert
