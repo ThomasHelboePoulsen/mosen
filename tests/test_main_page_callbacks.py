@@ -256,7 +256,7 @@ def test_income_lookup_uses_prefix_until_barcode_is_exact():
     assert exact_result == [{"barcode": "100", "name": "Alice", "price": 12.5}]
 
 
-def test_income_lookup_callback_preserves_payment_values_and_tooltips():
+def test_income_lookup_callback_preserves_payment_values_and_tooltips(temp_db):
     # Arrange
     rows = [
         {
@@ -278,7 +278,7 @@ def test_income_lookup_callback_preserves_payment_values_and_tooltips():
     ]
 
     # Act
-    filtered, tooltips, status = main_page_callbacks.update_income_lookup(
+    filtered, tooltips, status, page, _, _, _ = main_page_callbacks.update_income_lookup(
         "1000", rows
     )
 
@@ -287,14 +287,15 @@ def test_income_lookup_callback_preserves_payment_values_and_tooltips():
     assert filtered[0]["price"] == 12.5
     assert tooltips[0]["price"]["value"] == "12.5"
     assert status == ""
+    assert page == 0
 
 
-def test_income_lookup_callback_reports_no_match():
+def test_income_lookup_callback_reports_no_match(temp_db):
     # Arrange
     rows = [{"barcode": "1000", "name": "Alice", "price": 12.5}]
 
     # Act
-    filtered, tooltips, status = main_page_callbacks.update_income_lookup(
+    filtered, tooltips, status, page, _, _, _ = main_page_callbacks.update_income_lookup(
         "missing", rows
     )
 
@@ -302,6 +303,39 @@ def test_income_lookup_callback_reports_no_match():
     assert filtered == []
     assert tooltips == []
     assert status == "No matching user."
+    assert page == 0
+
+
+def test_income_search_finds_users_beyond_the_first_page(temp_db):
+    rows = [{"barcode": str(1000 + i), "name": f"User {i}"} for i in range(30)]
+
+    filtered, _, status, page, _, _, _ = main_page_callbacks.update_income_lookup("1029", rows)
+
+    assert filtered == [rows[29]]
+    assert status == ""
+    assert page == 0
+
+
+@pytest.mark.parametrize("query, expected_users", [
+    ("ali", ["1000", "1001"]),
+    ("1001", ["1001"]),
+    ("missing", []),
+    ("", ["1000", "1001", "1002"]),
+])
+def test_income_search_filters_transactions(monkeypatch, query, expected_users):
+    users = [
+        {"barcode": "1000", "name": "Alice"},
+        {"barcode": "1001", "name": "Alison"},
+        {"barcode": "1002", "name": "Bob"},
+    ]
+    transactions = pd.DataFrame({"barcode_user": ["1000", "1001", "1002"]})
+    monkeypatch.setattr(main_page_callbacks, "get_trans", lambda: transactions)
+
+    _, _, _, _, filtered, page, selection = main_page_callbacks.update_income_lookup(query, users)
+
+    assert [row["barcode_user"] for row in filtered] == expected_users
+    assert page == 0
+    assert selection == []
 
 
 def test_economy_layout_reuses_one_income_snapshot(monkeypatch, temp_db):
@@ -328,6 +362,25 @@ def test_economy_layout_reuses_one_income_snapshot(monkeypatch, temp_db):
     assert income_table.data == expected_rows
     assert income_store.data == expected_rows
     assert income_search.placeholder == "Type a name or scan a barcode"
+
+
+def test_economy_tables_use_small_native_pages_without_truncating_data(temp_db):
+    transactions = [
+        {"barcode_user": "1000", "barcode_prod": "101",
+         "timestamp": f"26/07/2026 10:00:{i:02d}"}
+        for i in range(30)
+    ]
+    _load_transaction_data(temp_db, transactions)
+
+    layout = main_layout.transaction_settings_layout()
+    transaction_table = _find_component(layout, "trans_table")
+    income_table = _find_component(layout, "income_table")
+
+    assert transaction_table.page_action == income_table.page_action == "native"
+    assert transaction_table.page_size == income_table.page_size == 25
+    assert transaction_table.data == transactions
+    assert transaction_table.tooltip_data == []
+    assert income_table.tooltip_data[0]["name"]["value"] == "Alice"
 
 
 def test_payment_modal_stays_closed_when_economy_tab_renders(monkeypatch, temp_db):
@@ -367,6 +420,18 @@ def test_selected_transaction_uses_sorted_virtual_table_position():
 
     # Assert
     assert selected == sorted_rows[1]
+
+
+def test_transaction_selection_on_later_page_uses_global_sorted_position():
+    sorted_rows = [
+        {"barcode_user": str(1000 + i), "barcode_prod": "101",
+         "timestamp": "26/07/2026 10:00:00"}
+        for i in reversed(range(30))
+    ]
+
+    selected = main_page_callbacks.get_selected_transaction(sorted_rows, [26])
+
+    assert selected["barcode_user"] == "1003"
 
 
 def test_remove_transaction_button_requires_selection(monkeypatch, temp_db):
@@ -697,7 +762,7 @@ def test_success_revision_refreshes_settings_data(temp_db):
         "prods",
     )
 
-    assert main_layout.update_settings_layout(False, None) == (no_update,) * 13
+    assert main_layout.update_settings_layout(False, None) == (no_update,) * 11
 
     result = main_layout.update_settings_layout(False, "revision")
 

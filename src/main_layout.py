@@ -261,6 +261,8 @@ def transaction_settings_layout():
                                         get_trans().to_dict(orient="records"),
                                         200,
                                         row_selectable="single",
+                                        page_size=25,
+                                        tooltips=False,
                                     ),
                                     html.Hr(),
                                     html.Label(
@@ -278,7 +280,7 @@ def transaction_settings_layout():
                                         className="text-danger",
                                         style={"minHeight": "24px"},
                                     ),
-                                    get_table("income_table", income_rows, 200),
+                                    get_table("income_table", income_rows, 200, page_size=25),
                                 ]
                             ),
                             width=9,
@@ -969,9 +971,7 @@ def toggle_checkboxes(n_clicks, current_values):
     Output("waste_table", "data"),
     Output("waste_table", "columns"),
     Output("waste_table", "tooltip_data"),
-    Output("trans_table", "data"),
     Output("trans_table", "columns"),
-    Output("trans_table", "tooltip_data"),
     Output("income_table_all_rows", "data"),
     Input("settings_modal", "is_open"),
     Input("admin_data_revision", "data"),
@@ -982,12 +982,11 @@ def update_settings_layout(
     admin_data_revision=None,
 ):
     if not settings_open and not admin_data_revision:
-        return (no_update,) * 13
+        return (no_update,) * 11
 
     users = get_users().to_dict(orient="records")
     products = get_prods().to_dict(orient="records")
     waste = get_waste_table()
-    transactions = get_trans().to_dict(orient="records")
     income = get_income()
     return (
         users,
@@ -999,9 +998,7 @@ def update_settings_layout(
         waste,
         [{"name": key, "id": key} for key in (waste[0].keys() if waste else [])],
         get_tooltip_data(waste),
-        transactions,
         _table_columns("transactions"),
-        get_tooltip_data(transactions),
         income,
     )
 

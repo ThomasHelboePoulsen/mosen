@@ -253,6 +253,68 @@ def test_admin_income_does_not_use_preview_fallback(test_db):
     assert income["price"] == income["purchases"]
 
 
+def test_income_is_empty_for_a_new_database(test_db):
+    assert get_income() == []
+
+
+def test_income_without_purchases_is_zero(test_db):
+    add_users([{"barcode": 1000, "name": "Alice", "rank": "R", "team": "T"}])
+
+    income = get_income()[0]
+
+    assert income["#products"] == 0
+    assert income["purchases"] == 0
+    assert income["price"] == 0
+
+
+def test_income_groups_purchases_by_barcode(test_db):
+    add_users([
+        {"barcode": 1000, "name": "Same name", "rank": "R", "team": "T"},
+        {"barcode": 1001, "name": "Same name", "rank": "R", "team": "T"},
+    ])
+    add_product()
+    add_sales([1000, 1001, 1000])
+
+    first, second = get_income()
+
+    assert first["#products"] == 2
+    assert first["purchases"] == 5
+    assert second["#products"] == 1
+    assert second["purchases"] == 2.5
+
+
+def test_income_adds_waste_and_keeps_settled_users_paid(test_db):
+    add_users([
+        {"barcode": 1000, "name": "Alice", "rank": "R", "team": "T", "waste_cents": 125},
+        {"barcode": 1001, "name": "Bob", "rank": "R", "team": "T",
+         "waste_cents": 250, "paid_cents": 500},
+    ])
+    add_product()
+    add_sales([1000, 1001])
+
+    alice, bob = get_income()
+
+    assert alice["waste"] == 1.25
+    assert alice["price"] == 3.75
+    assert bob["paid"] == 5
+    assert bob["price"] == 0
+
+
+@pytest.mark.parametrize("price", [0.1, 0.29, 12.345])
+def test_income_preserves_decimal_price_summation(test_db, price):
+    add_users([{"barcode": 1000, "name": "Alice", "rank": "R", "team": "T"}])
+    add_product()
+    products = test_db._product_table.get()
+    products["price"] = price
+    test_db.upload_values_raises(products, "prods")
+    add_sales([1000, 1000, 1000])
+
+    income = get_income()[0]
+
+    assert income["purchases"] == sum([price, price, price])
+    assert income["price"] == income["purchases"]
+
+
 def test_user_import_defaults_paid_cents_to_zero(test_db):
     # Arrange
     add_users(

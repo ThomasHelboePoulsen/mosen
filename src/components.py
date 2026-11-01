@@ -37,13 +37,18 @@ def get_upload(id: str):
     )
 
 
-def get_table(id, data, height, row_selectable=None):
+def get_table(
+    id, data, height, row_selectable=None, *, page_size: int = 250, tooltips: bool = True,
+):
     return dash_table.DataTable(
         id=id,
         data=data,
         columns=_get_columns(data),
         row_deletable=False,
         row_selectable=row_selectable,
+        page_action="native",
+        page_size=page_size,
+        page_current=0,
         fixed_rows={"headers": True},
         style_table={
             "height": f"{str(height)}px",
@@ -65,7 +70,7 @@ def get_table(id, data, height, row_selectable=None):
             "lineHeight": "1.1",
             "padding": "2px 4px",
         },
-        tooltip_data=get_tooltip_data(data),
+        tooltip_data=get_tooltip_data(data) if tooltips else [],
         tooltip_duration=None,
         sort_action="native",
     )

@@ -87,6 +87,10 @@ def filter_income_rows(rows, query):
     Output("income_table", "data"),
     Output("income_table", "tooltip_data"),
     Output("income_search_status", "children"),
+    Output("income_table", "page_current"),
+    Output("trans_table", "data"),
+    Output("trans_table", "page_current"),
+    Output("trans_table", "selected_rows"),
     Input("income_search", "value"),
     Input("income_table_all_rows", "data"),
 )
@@ -94,7 +98,14 @@ def update_income_lookup(query, rows):
     filtered_rows = filter_income_rows(rows, query)
     has_query = bool(str(query or "").strip())
     status = "No matching user." if has_query and not filtered_rows else ""
-    return filtered_rows, get_tooltip_data(filtered_rows), status
+    transactions = get_trans()
+    if has_query:
+        barcodes = {str(row["barcode"]) for row in filtered_rows}
+        transactions = transactions[transactions["barcode_user"].isin(barcodes)]
+    return (
+        filtered_rows, get_tooltip_data(filtered_rows), status, 0,
+        transactions.to_dict(orient="records"), 0, [],
+    )
 
 
 clientside_callback(

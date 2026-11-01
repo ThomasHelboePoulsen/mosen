@@ -39,22 +39,15 @@ def get_income():
     trans = get_trans()
     users = get_users()
     prods = get_prods()
-    price_dict = {str(p["barcode"]): p["price"] for _, p in prods.iterrows()}
-    trans["price"] = trans["barcode_prod"].apply(
-        lambda x: price_dict[str(x)] if str(x) in list(price_dict.keys()) else 0
-    )
-    user_income = list()
-    if len(trans) > 0:
-        price = lambda x: sum(
-            map(float, trans[trans["barcode_user"] == str(x)]["price"])
-        )
-        n_prods = lambda x: len(trans[trans["barcode_user"] == str(x)])
-    else:
-        price = lambda x: 0
-        n_prods = lambda x: 0
-    for _, user_row in users.iterrows():
+    price_dict = dict(zip(prods["barcode"].astype(str), prods["price"].astype(float)))
+    trans["price"] = trans["barcode_prod"].astype(str).map(price_dict).fillna(0.0)
+    grouped = trans.groupby("barcode_user", sort=False)["price"]
+    purchases_by_user = grouped.agg(lambda prices: sum(prices)).to_dict()
+    counts_by_user = grouped.size().to_dict()
+    user_income = []
+    for user_row in users.to_dict(orient="records"):
         barcode = str(user_row["barcode"])
-        purchases = price(barcode)
+        purchases = purchases_by_user.get(barcode, 0)
         stored_waste_cents = int(user_row.get("waste_cents", -1))
         waste = None if stored_waste_cents < 0 else stored_waste_cents / 100
         paid_cents = int(user_row.get("paid_cents", 0))
@@ -67,7 +60,7 @@ def get_income():
                 "name": str(user_row["name"]),
                 "rank": str(user_row["rank"]),
                 "team": str(user_row["team"]),
-                "#products": n_prods(barcode),
+                "#products": int(counts_by_user.get(barcode, 0)),
                 "purchases": purchases,
                 "waste": waste,
                 "paid": paid,
