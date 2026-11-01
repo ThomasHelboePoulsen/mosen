@@ -1,41 +1,84 @@
-# The Swamp Machine 5.0.0
-Previously known as "Mosemaskinen". A program written in java, which was unfortunanly lost to the beyond. Thus a new child was born.
+# Mosen (The Swamp Machine)
 
-The [documentation](https://thomashelboepoulsen.dk/mosen/docs) is available through the **Documentation** button in the admin login dialog, before entering a password. Scan the QR code with your phone to read the guide while the app keeps running. The QR code is a bundled image and works offline; reading the website requires internet.
+Mosen (also known as *Mosemaskinen*) is a barcode-based purchase and accounting system used during DTU introduction trips. It replaces the traditional paper *stregsystem*, where participants mark their purchases on a tally sheet, with barcode scanning and automatic accounting.
 
-## Developping Setup
-To develop this app you need to first create an environment. As I wont assume you know how, I've made a quick guide below.
+The application succeeds an older Java version and runs locally on a shared computer. Participants record purchases while administrators manage users, products, stock, payments, and final settlement, even when the internet connection is unreliable.
 
-### Getting the code (cloning the repo)
-In order to get a local version of the code you see in this repo, you can "clone" it through git. \
-First, make sure you have git installed on your computer. Write ```git --version``` in your bash terminal, command prompt or powershell. The output should look somewhat like "git version 2.35.1.windows.2" (the specific version of git is unimportant).
-If you don't have a valid git installation go [here](https://git-scm.com/downloads). \
-Now, open your terminal and find the directory, in which you wish to work from (you can put it on your desktop or something, idk). This is done with the ```cd``` command, e.g. ```cd ./path/to/where/you/want```. Once you're there run ```git clone https://github.com/eskehaack/mosen.git``` to clone the repository.
+![Mosen dashboard showing purchases by product across three teams](docs/images/mosen-dashboard.png)
 
-### Downloading Python
-The app was developped on Python 3.11.5, and it is thus it is preffered that you will continue with this version (or a different version of Python 3.11). To check your current version of Python write ```python --version``` in your bash terminal, command prompt or powershell. If you don't have the correct Python version you can get it from [here](https://www.python.org/downloads/release/python-3115/).
+*Example team purchase dashboard with test data.*
 
-### Setting up your environment
-In order to make sure you're using the correct version of all packages involved you need to create a virtual env. There are multiple ways of doing this, but the easiest and most correct way (no hate, but this is true) is to run the following in your command line (of course in your project directory from step 1): \
-```python -m venv .venv```: This creates an environment for you to work in. \
-```.venv\Scripts\activate.ps1```: To activate the envirment. (On Linux this is ```source .venv/bin/activate```)
-```pip install -r requirements.txt```: To download the required packages to your venv. \
+## Features
 
-Now you are ready to write new code for the app.
+- **Barcode-based purchases:** Participants scan their barcode and the products they purchase.
+- **Administration:** Manage users, products, stock, and purchase corrections.
+- **Settlement:** Track purchases and payments and export results for settlement.
+- **Statistics:** Review purchases and other operational information in the interface.
+- **Local operation:** Use a SQLite database without requiring a hosted backend.
+- **Reliability:** Support transactional updates, logging, and backups.
 
-## Developping the app.
-In order to develop the app further, there are certain rules I would like you to uphold, in order to keep readablity and version control.
+## Using the application
 
-### Running the script
-The script is build up from the ```main.py``` file, thus running the script should be ```python main.py``` (while you venv is active of course). 
+The complete Windows application is packaged in [`swampmachine.exe`](swampmachine.exe). Download or copy this single file to a folder on your Windows computer and double-click it to start. You do not need to install Python or download the source code.
 
-### Using git
-In order to push your working code (pay close attention to the key word "working") you'll be using git (as you might have realized). I have made a branch protection rule on the main branch, forcing you to work with feature branches. \
-To create a branch for you to work on run this command in you command line ```git checkout -b "your_branch_name"```. The name of your branch should be somewhat explanatory (e.g. "more_graph_options"). \
-When you've done changes to the code, you need to "add", "commit" and "push" them. To do so, run the following. ```git add .\path\to\changed\file``` (you can add multiple files at once, or an entire directory. ```git add .``` to add all changed and created files.). When you've added all the relevant files (doesn't have to be all changed files.) your need to commit them. Run ```git commit -m "some meaningfull message of what you did"``` (the ```-m``` is quite important). \
-When you've added and commit all changes run ```git push``` to "upload" all changes to the remote host (in this case github.com/eskehaack/mosen).\ 
-When you're done implementing your new feature, create a "Pull Request" in github ([here](https://github.com/eskehaack/mosen/pulls)). Once it has been reviewed, I'll merge it into main and build a new version of the app.
+The app automatically creates its database (`beerbase.db`), backups, and logs in its working folder, normally alongside the executable. To move an existing trip to another computer, copy the database and executable. Keeping the trip files together makes them easy to find and remove when no longer needed.
 
-## Building / Freezing the app
-The app is frozen / build (or whatever you want to call it) with pyinstaller.\
-Simply run ```pyinstaller -F -n "swampmachine.exe" --distpath "." --clean --icon "assets\favicon.ico" --add-data "assets:assets" --log-level=WARN main.py```
+The [administrator documentation](https://thomashelboepoulsen.dk/mosen/docs) explains how to set up and operate the system during a trip. It is also accessible through the **Documentation** button in the administrator login dialog.
+
+## Technology and structure
+
+Mosen uses **Python**, **Dash/Plotly**, and **SQLite**. The kiosk-style desktop interface uses **pywebview**, and the Windows executable is built with **PyInstaller**.
+
+- `main.py` — application entry point and choice of browser or desktop mode
+- `app.py` — Dash application initialization
+- `src/` — application logic, UI, and database code
+- `tests/` — automated tests
+- `assets/` — styles and other assets
+
+## Development setup
+
+Python **3.11** and Git are recommended. On Windows, open PowerShell and run:
+
+```powershell
+git clone https://github.com/eskehaack/mosen.git
+cd mosen
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+### Running the application
+
+In `main.py`, set:
+
+```python
+run_in_web = True
+```
+
+Then run:
+
+```powershell
+python main.py
+```
+
+This starts the Dash server for use in your browser at `http://127.0.0.1:8050`. Set `run_in_web = False` to launch the fullscreen desktop interface instead.
+
+### Tests
+
+With the virtual environment active:
+
+```powershell
+python -m pytest tests
+```
+
+## Building the Windows executable
+
+With the virtual environment active and `run_in_web = False` in `main.py`:
+
+```powershell
+pyinstaller -F -n "swampmachine.exe" --distpath "." --clean --icon "assets\favicon.ico" --add-data "assets:assets" --log-level=WARN main.py
+```
+
+## Contributing
+
+Please develop changes in a separate branch and submit a pull request. Include or update tests when changing purchase processing, database operations, or settlement logic.
