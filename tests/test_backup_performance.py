@@ -8,7 +8,7 @@ from src.database.data_connection import Database
 # Ten times the expected 300 users * 16 purchases. Like the scan performance
 # tests, this is a machine-dependent regression budget, not a hardware guarantee.
 PURCHASE_COUNT = 48_000
-BACKUP_LIMIT_SECONDS = 0.5
+BACKUP_LIMIT_SECONDS = 0.2
 
 
 def test_large_trip_backup_is_fast_enough(tmp_path):
