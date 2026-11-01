@@ -264,13 +264,14 @@ def new_trans(trigger, is_open, _barcode, user_barcode):
 
 
 def _render_basket(current: pd.DataFrame):
+    products = {}
+    for barcode, name in zip(current["barcode_prod"], current["name"]):
+        first_name, amount = products.get(barcode, (str(name), 0))
+        products[barcode] = (first_name, amount + 1)
+
     display_text = [html.H1("Products: ")]
-    for current_barcode in current["barcode_prod"].unique():
-        prod_name = str(
-            current[current["barcode_prod"] == current_barcode]["name"].values[0]
-        )
-        current_amount = int(len(current[current["barcode_prod"] == current_barcode]))
-        display_text.append(html.H2(f"{current_amount}x: {prod_name}"))
+    for name, amount in products.values():
+        display_text.append(html.H2(f"{amount}x: {name}"))
 
     return display_text
 

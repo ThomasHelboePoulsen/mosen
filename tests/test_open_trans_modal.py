@@ -521,6 +521,18 @@ def test_scans_multipliers_and_removal_update_display(temp_db):
     assert temp_db.temporary.empty
 
 
+def test_basket_display_counts_products_in_scan_order():
+    basket = pd.DataFrame([
+        {"barcode_prod": "102", "name": "Soda"},
+        {"barcode_prod": "101", "name": "Beer"},
+        {"barcode_prod": "102", "name": "Soda"},
+    ])
+
+    display = trans_layout._render_basket(basket)
+
+    assert [line.children for line in display] == ["Products: ", "2x: Soda", "1x: Beer"]
+
+
 def test_scan_after_closing_is_ignored(temp_db):
     result = trans_layout.new_trans(1, False, "1234", "", [])
 
