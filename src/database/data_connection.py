@@ -129,9 +129,9 @@ class Database:
             return False
 
         if partition == BarcodePartition.PRODUCT:
-            return int(barcode) in list(self._product_table.get()["barcode"])
+            return self._product_table.contains_barcode(int(barcode))
         elif partition == BarcodePartition.USER:
-            return int(barcode) in list(self._user_table.get()["barcode"])
+            return self._user_table.contains_barcode(int(barcode))
         else:
             raise ValueError("Unknown barcode partition")
 

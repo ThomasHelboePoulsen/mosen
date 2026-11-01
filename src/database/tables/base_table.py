@@ -68,10 +68,13 @@ class BaseTable(ABC):
                 cur.execute(self.create_sql)
             self._with_transaction(_create)
 
-    def _refresh_cache(self):
+    def _read_cache(self) -> pd.DataFrame:
         query = f"SELECT * FROM {self.table_name}"
         col_names = [col.name for col in self.columns]
-        self._cache = self.connection.get_query(query, col_names)
+        return self.connection.get_query(query, col_names)
+
+    def _refresh_cache(self):
+        self._cache = self._read_cache()
     
     def is_valid_batch(self, row: dict, all_rows: list) -> bool:
         """Validate row against all_rows (includes row being tested)."""

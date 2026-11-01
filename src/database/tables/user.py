@@ -1,9 +1,9 @@
-from src.database.tables.base_table import BaseTable
+from src.database.tables.barcode_table import BarcodeTable
 from src.database.tables.column import Column, BarcodeColumn
 from src.barcode import BarcodePartition
 
 
-class UserTable(BaseTable):
+class UserTable(BarcodeTable):
     table_name = "users"
     columns = [
         BarcodeColumn("barcode", int, partition=BarcodePartition.USER, required=True, is_primary_key=True),

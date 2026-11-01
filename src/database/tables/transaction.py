@@ -43,10 +43,8 @@ class TransactionTable(BaseTable):
     
     def _validate_product_exists(self, row: dict) -> bool:
         """Check that barcode_prod exists in products table."""
-        prods = self.product_table.get()
-        return int(row["barcode_prod"]) in list(prods["barcode"])
+        return self.product_table.contains_barcode(int(row["barcode_prod"]))
     
     def _validate_user_exists(self, row: dict) -> bool:
         """Check that barcode_user exists in users table."""
-        users = self.user_table.get()
-        return int(row["barcode_user"]) in list(users["barcode"])
+        return self.user_table.contains_barcode(int(row["barcode_user"]))

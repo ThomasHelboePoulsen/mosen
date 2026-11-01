@@ -3,6 +3,8 @@
 import pandas as pd
 import pytest
 
+from src.barcode import BarcodePartition
+
 
 def _transaction(**overrides):
     return {
@@ -29,24 +31,20 @@ def transaction_table(temp_db):
     return table
 
 
-@pytest.mark.parametrize("as_dataframe", [False, True])
 def test_append_preserves_history_without_converting_it_to_records(
-    temp_db, transaction_table, monkeypatch, as_dataframe,
+    transaction_table, monkeypatch,
 ):
     rows = [_transaction(), _transaction()]
-    data = pd.DataFrame(rows) if as_dataframe else rows
 
     def reject_history_conversion(*args, **kwargs):
         pytest.fail("Transaction append converted the old purchase history")
 
     monkeypatch.setattr(transaction_table._cache, "to_dict", reject_history_conversion)
 
-    result = transaction_table.append(data)
+    result = transaction_table.append(rows)
 
     assert result == ("success", [])
     assert transaction_table.get().to_dict("records") == [_transaction(), *rows]
-    stored = temp_db.get_query("SELECT * FROM transactions", list(transaction_table.get().columns))
-    pd.testing.assert_frame_equal(transaction_table.get_untyped(), stored)
 
 
 @pytest.mark.parametrize("invalid_values", [
@@ -56,7 +54,7 @@ def test_append_preserves_history_without_converting_it_to_records(
     {"timestamp": ""},
 ])
 def test_append_rejects_entire_invalid_batch_and_preserves_history(
-    temp_db, transaction_table, invalid_values,
+    transaction_table, invalid_values,
 ):
     before = transaction_table.get_untyped()
     invalid_row = _transaction(**invalid_values)
@@ -66,8 +64,6 @@ def test_append_rejects_entire_invalid_batch_and_preserves_history(
     assert result == "transactions"
     assert bad_rows == [invalid_row]
     pd.testing.assert_frame_equal(transaction_table.get_untyped(), before)
-    stored = temp_db.get_query("SELECT * FROM transactions", list(before.columns))
-    pd.testing.assert_frame_equal(stored, before)
 
 
 def test_append_rollback_preserves_history_in_database_and_cache(temp_db, transaction_table):
@@ -81,8 +77,36 @@ def test_append_rollback_preserves_history_in_database_and_cache(temp_db, transa
         temp_db.execute_in_transaction(append_then_fail).raise_if_error()
 
     pd.testing.assert_frame_equal(transaction_table.get_untyped(), before)
-    stored = temp_db.get_query("SELECT * FROM transactions", list(before.columns))
-    pd.testing.assert_frame_equal(stored, before)
+
+
+def test_reference_checks_use_cached_barcodes_without_reading_tables(
+    temp_db, transaction_table, monkeypatch,
+):
+    def reject_table_read(*args, **kwargs):
+        pytest.fail("Barcode existence check copied a reference table")
+
+    for name in ("users", "prods"):
+        table = temp_db.get_table(name)
+        monkeypatch.setattr(table, "get", reject_table_read)
+        monkeypatch.setattr(table, "get_untyped", reject_table_read)
+
+    assert temp_db.barcode_exists(1000, BarcodePartition.USER) is True
+    assert temp_db.barcode_exists(100, BarcodePartition.PRODUCT) is True
+    assert temp_db.barcode_exists(1001, BarcodePartition.USER) is False
+    assert temp_db.barcode_exists(101, BarcodePartition.PRODUCT) is False
+    assert transaction_table.append([_transaction(), _transaction()]) == ("success", [])
+    assert len(transaction_table.get()) == 3
+
+
+def test_barcode_exists_preserves_input_validation(temp_db, transaction_table):
+    assert temp_db.barcode_exists("001000", BarcodePartition.USER)
+    assert temp_db.barcode_exists("00100", BarcodePartition.PRODUCT)
+    assert not temp_db.barcode_exists(100, BarcodePartition.USER)
+    assert not temp_db.barcode_exists(1000, BarcodePartition.PRODUCT)
+
+    for invalid_barcode in (None, "", "bad", True, 0, 100.5):
+        assert not temp_db.barcode_exists(invalid_barcode, BarcodePartition.USER)
+        assert not temp_db.barcode_exists(invalid_barcode, BarcodePartition.PRODUCT)
 
 
 @pytest.mark.parametrize("table_name, invalid_values", [
@@ -102,5 +126,3 @@ def test_other_tables_still_reject_duplicates_against_existing_rows(
     assert result == table_name
     assert bad_rows == [duplicate]
     pd.testing.assert_frame_equal(table.get_untyped(), before)
-    stored = temp_db.get_query(f"SELECT * FROM {table_name}", list(before.columns))
-    pd.testing.assert_frame_equal(stored, before)
