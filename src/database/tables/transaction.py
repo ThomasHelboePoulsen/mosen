@@ -8,6 +8,7 @@ from src.barcode import BarcodePartition
 
 class TransactionTable(BaseTable):
     table_name = "transactions"
+    _append_requires_existing_rows = False
     columns = [
         BarcodeColumn("barcode_user", int, partition=BarcodePartition.USER, required=True),
         BarcodeColumn("barcode_prod", int, partition=BarcodePartition.PRODUCT, required=True),

@@ -14,6 +14,7 @@ class BaseTable(ABC):
     table_name: str      # Override: "prods", "users", etc
     columns: list        # Override: list of Column objects
     create_sql: str      # Override: SQL to create table
+    _append_requires_existing_rows: bool = True
     
     def __init__(self, connection: Connection):
         self.connection = connection
@@ -206,9 +207,10 @@ class BaseTable(ABC):
             if not data:
                 return "success", []
 
-            working_rows = self._cache.to_dict(orient="records")
             data = [self._fill_optional_defaults(row).copy() for row in data]
-            candidate_rows = working_rows + data
+            candidate_rows = data
+            if self._append_requires_existing_rows:
+                candidate_rows = self._cache.to_dict(orient="records") + data
             bad_rows = []
             good_rows = []
 
@@ -220,7 +222,6 @@ class BaseTable(ABC):
                     bad_rows.append(candidate_row)
                 else:
                     good_rows.append(candidate_row)
-                    working_rows.append(candidate_row)
 
             if bad_rows:
                 return self.table_name, bad_rows
