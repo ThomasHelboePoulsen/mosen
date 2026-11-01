@@ -238,7 +238,7 @@ def db_transaction_result(_func=None, *, fallback_values: tuple[Any, ...] | None
         def wrapper(*args, **kwargs):
             db = Container.get(Database)
             result = db.execute_in_transaction(lambda: func(*args, **kwargs))
-            if result.error is not None and fallback_values is not None:
+            if result.error is not None and not result.values and fallback_values is not None:
                 return Result(values=fallback_values, error=result.error)
             return result
         return wrapper

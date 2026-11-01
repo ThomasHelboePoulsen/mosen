@@ -85,6 +85,20 @@ def test_db_transaction_result_uses_fallback_values_on_exception(test_db):
     assert result.values == ("fallback", "reset")
     assert isinstance(result.error, ValueError)
 
+
+def test_db_transaction_result_preserves_explicit_error_outputs(test_db):
+    error = ValueError("Invalid upload")
+
+    @db_transaction_result(fallback_values=("fallback",))
+    def reject_upload():
+        return TransactionResult(values=("show warning",), error=error, commit=False)
+
+    result = reject_upload()
+
+    assert result.values == ("show warning",)
+    assert result.error is error
+
+
 def test_set_then_error_between_sets_rolls_back(test_db):
     # Arrange
     db = test_db

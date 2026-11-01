@@ -415,7 +415,9 @@ def _validate_optional_user_values(
     State("settings_password", "value"),
     State({"index": ALL, "type": "database_upload"}, "filename"),
 )
-@db_transaction_result
+@db_transaction_result(
+    fallback_values=(no_update, no_update, no_update, [no_update] * 3, no_update)
+)
 def update_settings(
     pass_trigger,
     show_bill,

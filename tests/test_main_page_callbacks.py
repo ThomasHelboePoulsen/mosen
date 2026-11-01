@@ -816,6 +816,19 @@ def test_first_user_import_commits_settings_and_data_after_backup(
         assert con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
 
 
+def test_import_backup_failure_keeps_shaped_outputs(settings_upload, temp_db, monkeypatch):
+    monkeypatch.setattr(
+        main_page_callbacks, "create_database_backup",
+        Mock(side_effect=PermissionError("Backup failed")),
+    )
+
+    result = settings_upload(_users_csv(_user_row()))
+
+    assert result[:5] == (no_update, no_update, no_update, [no_update] * 3, no_update)
+    assert result[5][0]["msg"] == "Backup failed"
+    assert temp_db.users.empty
+
+
 @pytest.mark.parametrize(
     "table, filename, content, message",
     [
