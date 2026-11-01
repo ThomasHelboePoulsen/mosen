@@ -51,8 +51,8 @@ def enable_confirm(inps, invalid_barcode):
 
 
 @db_transaction_raises
-def add_row(vals, edit_barcode) -> list[dict]:
-    """Add or edit a product and return the updated table. Invalid data raises."""
+def add_row(vals, edit_barcode) -> None:
+    """Add or edit a product. Invalid data raises."""
     db = Container.get(Database)
     table = db._product_table
     data = table.get()
@@ -74,15 +74,12 @@ def add_row(vals, edit_barcode) -> list[dict]:
         )
         db.upload_values_raises(trans, "transactions")
 
-    return table.get().to_dict(orient="records")
-
 
 @callback_with_error_queue(
-    4,
-    Output("prod_table", "data"),
+    3,
     Output("edit_input", "value", allow_duplicate=True),
     Output("new_prod_modal", "is_open", allow_duplicate=True),
-    Output("form_save_revision", "data", allow_duplicate=True),
+    Output("admin_data_revision", "data", allow_duplicate=True),
     Input("confirm_prod", "n_clicks"),
     State({"type": "prod_input", "index": ALL}, "value"),
     State("edit_input", "value"),
@@ -90,9 +87,9 @@ def add_row(vals, edit_barcode) -> list[dict]:
 )
 def add_row_callback(n_clicks, vals, edit_barcode):
     if not n_clicks:
-        return no_update, no_update, no_update, no_update
-    rows, = add_row(vals, edit_barcode)
-    return rows, None, False, uuid4().hex
+        return no_update, no_update, no_update
+    add_row(vals, edit_barcode)
+    return None, False, uuid4().hex
 
 
 @callback(
@@ -114,8 +111,9 @@ def validate_barcode_prod(value, edit_barcode):
     return False
 
 
-@callback_with_error_queue(1,
+@callback_with_error_queue(2,
     Output("new_stock_modal", "is_open"),
+    Output("admin_data_revision", "data", allow_duplicate=True),
     Input("open_update_stock", "n_clicks"),
     Input("confirm_new_stock", "n_clicks"),
     State({"type": "new_stock_inp", "index": ALL}, "value"),
@@ -123,16 +121,14 @@ def validate_barcode_prod(value, edit_barcode):
 def open_stock(trigger_open, trigger_close, inps):
     trigger = ctx.triggered_id
     if trigger == "open_update_stock" and trigger_open:
-        return True
+        return True, no_update
     if trigger == "confirm_new_stock" and trigger_close:
         try:
             confirm_new_stock(inps)
-            return False
+            return False, uuid4().hex
         except Exception as e:
-            #close on error, as clicking the button will do that anyway...
-            #can be fixed by changing update_settings_layout to triggero on succesful db changes instead of button presses.
-            return Result(False, error=e) 
-    return no_update
+            return Result((no_update, no_update), error=e)
+    return no_update, no_update
 
 @db_transaction_raises
 def confirm_new_stock(inps):

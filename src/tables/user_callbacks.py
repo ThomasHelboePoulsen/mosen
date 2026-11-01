@@ -47,11 +47,10 @@ def enable_confirm(inps, invalid_barcode):
     return True
 
 
-@callback_with_error_queue(4,
-    Output("user_table", "data"),
+@callback_with_error_queue(3,
     Output("edit_input", "value", allow_duplicate=True),
     Output("new_user_modal", "is_open", allow_duplicate=True),
-    Output("form_save_revision", "data", allow_duplicate=True),
+    Output("admin_data_revision", "data", allow_duplicate=True),
     Input("confirm_user", "n_clicks"),
     State({"type": "user_input", "index": ALL}, "value"),
     State("edit_input", "value"),
@@ -59,13 +58,14 @@ def enable_confirm(inps, invalid_barcode):
 )
 def add_row_callback(n_clicks, vals, edit_barcode):
     if not n_clicks:
-        return no_update, no_update, no_update, no_update
-    rows, = add_row(vals, edit_barcode)
-    return rows, None, False, uuid4().hex
+        return no_update, no_update, no_update
+    add_row(vals, edit_barcode)
+    return None, False, uuid4().hex
+
 
 @db_transaction_raises
-def add_row(vals, edit_barcode) -> list[dict]:
-    """Add or edit a user and return the updated table. Invalid data raises."""
+def add_row(vals, edit_barcode) -> None:
+    """Add or edit a user. Invalid data raises."""
     db = Container.get(Database)
     table = db._user_table
     data = table.get()
@@ -97,8 +97,6 @@ def add_row(vals, edit_barcode) -> list[dict]:
         trans_mask = trans["barcode_user"]== int(edit_barcode)
         trans.loc[trans_mask, "barcode_user"] = int(vals[0])
         db.upload_values_raises(trans, "transactions")
-
-    return table.get().to_dict(orient="records")
 
 
 @callback(

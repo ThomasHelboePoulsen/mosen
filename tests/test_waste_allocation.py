@@ -1092,7 +1092,9 @@ def test_product_waste_table_remains_live(test_db):
     assert after[0]["Waste"] == 2
 
 
-def test_payment_export_persists_fresh_allocations(test_db, monkeypatch):
+def test_payment_export_persists_allocations_and_refreshes_economy_summary(
+    test_db, monkeypatch
+):
     add_users(
         [
             {"barcode": 1000, "name": "A", "rank": "R", "team": "T", "is_guest": 0},
@@ -1111,12 +1113,28 @@ def test_payment_export_persists_fresh_allocations(test_db, monkeypatch):
         types.SimpleNamespace(triggered_id="confirm_payments"),
     )
 
+    before = main_layout.refresh_economy_summary(True, None)
     result = main_page_callbacks.control_payments_modal(
         None, 1, 0, []
     )
+    revision = main_page_callbacks.refresh_after_payment_export(result[1])
+    after = main_layout.refresh_economy_summary(False, revision)
 
     assert result[0] is False
+    assert result[1]["filename"] == "swamp_machine_payments.xlsx"
+    assert result[2] is main_page_callbacks.no_update
+    assert isinstance(revision, str) and revision
     assert test_db._user_table.get()["waste_cents"].tolist() == [300, 300]
+    assert before[3] == "Allocated Waste: 0.0"
+    assert after[3] == "Allocated Waste: 6.0"
+
+
+@pytest.mark.parametrize("download", [None, main_page_callbacks.no_update])
+def test_payment_refresh_ignores_missing_download(download):
+    assert (
+        main_page_callbacks.refresh_after_payment_export(download)
+        is main_page_callbacks.no_update
+    )
 
 
 def test_payment_export_requires_stock_update(test_db, monkeypatch):
@@ -1298,34 +1316,44 @@ def test_bill_preview_extra_percent_applies_to_fallback_share(test_db):
     assert get_preview_user_waste_cents(user, 600, 2) == 450
 
 
-def test_payment_confirmation_refreshes_economy_layout(monkeypatch):
-    monkeypatch.setattr(
-        main_layout,
-        "ctx",
-        types.SimpleNamespace(triggered_id="confirm_payments"),
+def test_economy_summary_refreshes_after_committed_change(test_db):
+    before = main_layout.refresh_economy_summary(True, None)
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": 600,
+            }
+        ]
     )
-    monkeypatch.setattr(main_layout.time, "sleep", lambda _: None)
-    marker = object()
-    monkeypatch.setattr(main_layout, "user_settings_layout", lambda: marker)
-    monkeypatch.setattr(main_layout, "product_settings_layout", lambda: marker)
-    monkeypatch.setattr(main_layout, "transaction_settings_layout", lambda: marker)
 
-    result = main_layout.update_settings_layout(None, False, None, None, None, None, 1)
+    assert main_layout.refresh_economy_summary(False, None) == (
+        main_page_callbacks.no_update,
+    ) * 6
+    after = main_layout.refresh_economy_summary(False, "revision")
 
-    assert result == (marker, marker, marker)
+    assert before[3] == "Allocated Waste: 0.0"
+    assert after[3] == "Allocated Waste: 6.0"
 
 
-def test_settings_modal_open_refreshes_settings_layouts(monkeypatch):
-    monkeypatch.setattr(
-        main_layout,
-        "ctx",
-        types.SimpleNamespace(triggered_id="settings_modal"),
+def test_settings_open_refreshes_economy_summary_from_current_database(test_db):
+    add_users(
+        [
+            {
+                "barcode": 1000,
+                "name": "A",
+                "rank": "R",
+                "team": "T",
+                "is_guest": 0,
+                "waste_cents": 600,
+            }
+        ]
     )
-    marker = object()
-    monkeypatch.setattr(main_layout, "user_settings_layout", lambda: marker)
-    monkeypatch.setattr(main_layout, "product_settings_layout", lambda: marker)
-    monkeypatch.setattr(main_layout, "transaction_settings_layout", lambda: marker)
 
-    result = main_layout.update_settings_layout(None, True, None, None, None, None, None)
+    result = main_layout.refresh_economy_summary(True, None)
 
-    assert result == (marker, marker, marker)
+    assert result[3] == "Allocated Waste: 6.0"

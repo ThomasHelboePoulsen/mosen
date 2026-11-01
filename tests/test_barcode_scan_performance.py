@@ -316,7 +316,7 @@ def _handle_checkout_scan(monkeypatch, user_barcode=USER_BARCODE):
 
 def _refresh_overview(monkeypatch, graph_col="rank", average=False):
     _set_overview_trigger(monkeypatch)
-    return main_page_callbacks.update_overview_graph(False, graph_col, average)
+    return main_page_callbacks.update_overview_graph(False, graph_col, average, False)
 
 
 def _refresh_overview_parts(graph_col="rank", average=False):

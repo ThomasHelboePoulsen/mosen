@@ -1,6 +1,5 @@
 from app import app
 import keyboard as k
-import time
 from dash import dcc, html, callback, Input, Output, State, ctx, no_update
 import pandas as pd
 import plotly.express as px
@@ -32,7 +31,8 @@ from src.modals import (
 from src.trans_layout import trans_modal
 from src.error_handler import get_error_view_components,append_error,callback_with_error_queue
 from src.analytics.overview_plot import create_overview
-from src.components import get_upload, get_table
+from src.components import get_upload, get_table, get_tooltip_data
+from src.database.data_connection import Database
 from src import main_page_callbacks  # Register main page callbacks
 from src.tables import prod_callbacks  # Register product callbacks
 from src.tables import user_callbacks  # Register user callbacks
@@ -195,16 +195,29 @@ def transaction_settings_layout():
                             html.Div(
                                 [
                                     html.P(
-                                        f"Initially Projected Revenue: {get_total_income()}"
+                                        f"Initially Projected Revenue: {get_total_income()}",
+                                        id="initial_projected_revenue",
                                     ),
                                     html.Hr(),
-                                    html.P(f"Current Revenue: {get_revenue()}"),
+                                    html.P(
+                                        f"Current Revenue: {get_revenue()}",
+                                        id="current_revenue",
+                                    ),
                                     html.Hr(),
-                                    html.P(f"Raw Waste: {waste}"),
-                                    html.P(f"Allocated Waste: {allocated_waste}"),
-                                    html.P(f"Next Strategy: {get_waste_strategy()}"),
+                                    html.P(f"Raw Waste: {waste}", id="raw_waste"),
+                                    html.P(
+                                        f"Allocated Waste: {allocated_waste}",
+                                        id="allocated_waste",
+                                    ),
+                                    html.P(
+                                        f"Next Strategy: {get_waste_strategy()}",
+                                        id="next_waste_strategy",
+                                    ),
                                     html.Hr(),
-                                    html.P(f"Stock Value: {get_current_return()}"),
+                                    html.P(
+                                        f"Stock Value: {get_current_return()}",
+                                        id="stock_value",
+                                    ),
                                     html.Hr(),
                                     dbc.Button(
                                         "Export payments", id="export_payments_btn"
@@ -832,9 +845,7 @@ def layout_func():
             documentation_modal(),
             edit_modal(),
             top_user_chart_modal(),
-            dcc.Store(id="update_settings"),
-            dcc.Store(id="transaction_removal_revision"),
-            dcc.Store(id="form_save_revision"),
+            dcc.Store(id="admin_data_revision"),
             dcc.Store(id="retain_focus_main", data=None),
             dcc.Store(id="retain_focus_prod", data=None),
             dcc.Store(id="retain_focus_password", data=None),
@@ -949,46 +960,113 @@ def toggle_checkboxes(n_clicks, current_values):
 
 
 @callback(
-    Output("user_settings", "children"),
-    Output("product_settings", "children"),
-    Output("economy_settings", "children"),
-    Input("setting_tabs", "value"),
+    Output("user_table", "data"),
+    Output("user_table", "columns"),
+    Output("user_table", "tooltip_data"),
+    Output("prod_table", "data"),
+    Output("prod_table", "columns"),
+    Output("prod_table", "tooltip_data"),
+    Output("waste_table", "data"),
+    Output("waste_table", "columns"),
+    Output("waste_table", "tooltip_data"),
+    Output("trans_table", "data"),
+    Output("trans_table", "columns"),
+    Output("trans_table", "tooltip_data"),
+    Output("income_table_all_rows", "data"),
     Input("settings_modal", "is_open"),
-    Input("delete_data_btn", "n_clicks"),
-    Input("confirm_new_stock", "n_clicks"),
-    Input("confirm_payments", "n_clicks"),
-    Input("transaction_removal_revision", "data"),
-    Input("form_save_revision", "data"),
+    Input("admin_data_revision", "data"),
+    prevent_initial_call=True,
 )
 def update_settings_layout(
-    trigger,
     settings_open,
-    reset_trigger,
-    stock_trigger,
-    payments_trigger,
-    transaction_removal_revision=None,
-    form_save_revision=None,
+    admin_data_revision=None,
 ):
-    #Currently works by guessing that any db changes are done 1 sec after a callback possibly changing anything
-    #Ideally this is moved to only trigger after a callback sucessfully changes db.
-    if all(
-        action is None
-        for action in [
-            reset_trigger,
-            stock_trigger,
-            payments_trigger,
-            transaction_removal_revision,
-            form_save_revision,
-            settings_open,
-        ]
-    ):
-        return no_update, no_update, no_update
-    time.sleep(1)
+    if not settings_open and not admin_data_revision:
+        return (no_update,) * 13
+
+    users = get_users().to_dict(orient="records")
+    products = get_prods().to_dict(orient="records")
+    waste = get_waste_table()
+    transactions = get_trans().to_dict(orient="records")
+    income = get_income()
     return (
-        user_settings_layout(),
-        product_settings_layout(),
-        transaction_settings_layout(),
+        users,
+        _table_columns("users"),
+        get_tooltip_data(users),
+        products,
+        _table_columns("prods"),
+        get_tooltip_data(products),
+        waste,
+        [{"name": key, "id": key} for key in (waste[0].keys() if waste else [])],
+        get_tooltip_data(waste),
+        transactions,
+        _table_columns("transactions"),
+        get_tooltip_data(transactions),
+        income,
     )
+
+
+def _table_columns(table_name):
+    table = Container.get(Database).get_table(table_name)
+    return [
+        {"name": column.name.replace("_", " ").title(), "id": column.name}
+        for column in table.columns
+    ]
+
+
+@callback(
+    Output("initial_projected_revenue", "children"),
+    Output("current_revenue", "children"),
+    Output("raw_waste", "children"),
+    Output("allocated_waste", "children"),
+    Output("next_waste_strategy", "children"),
+    Output("stock_value", "children"),
+    Input("settings_modal", "is_open"),
+    Input("admin_data_revision", "data"),
+    prevent_initial_call=True,
+)
+def refresh_economy_summary(
+    settings_open,
+    admin_data_revision,
+):
+    if not settings_open and not admin_data_revision:
+        return (no_update,) * 6
+
+    users = get_users()
+    allocated_waste = (
+        users[users["waste_cents"].astype(int) >= 0]["waste_cents"].astype(int).sum()
+        / 100
+    )
+    return (
+        f"Initially Projected Revenue: {get_total_income()}",
+        f"Current Revenue: {get_revenue()}",
+        f"Raw Waste: {get_waste()}",
+        f"Allocated Waste: {allocated_waste}",
+        f"Next Strategy: {get_waste_strategy()}",
+        f"Stock Value: {get_current_return()}",
+    )
+
+
+@callback(
+    Output("new_stock_modal", "children"),
+    Input("new_stock_modal", "is_open"),
+    prevent_initial_call=True,
+)
+def refresh_stock_inputs(is_open):
+    if not is_open:
+        return no_update
+    return update_stock_modal().children
+
+
+@callback(
+    Output("study_users_dd", "options"),
+    Input("study_users_modal", "is_open"),
+    prevent_initial_call=True,
+)
+def refresh_study_users(is_open):
+    if not is_open:
+        return no_update
+    return list(get_users()["barcode"])
 
 
 @callback(

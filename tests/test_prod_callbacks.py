@@ -118,7 +118,7 @@ class TestProdCallbacksAddRow:
         assert prods.iloc[0]["current_stock"] == str(current_stock)
         assert prods.iloc[0]["initial_stock"] == "15"
 
-    def test_failed_readback_rolls_back_product_edit(self, test_db):
+    def test_invalid_product_edit_rolls_back(self, test_db):
         # Arrange
         upload_values(pd.DataFrame([
             {"barcode": 123, "name": "Beer", "price": 5.0, "category": "Beverage", "current_stock": 10, "initial_stock": 20}
@@ -127,10 +127,9 @@ class TestProdCallbacksAddRow:
         vals = [123, "Changed name", 8.0, "Alcohol", 15.5]
 
         # Act
-        rows, edit_value, is_open, revision, errors = add_row_callback(1, vals, 123, [])
+        edit_value, is_open, revision, errors = add_row_callback(1, vals, 123, [])
 
         # Assert
-        assert rows is no_update
         assert edit_value is no_update
         assert is_open is no_update
         assert revision is no_update
@@ -265,6 +264,61 @@ class TestConfirmNewStock:
         # Assert
         assert result[0] is no_update
         assert result[1] is no_update
+
+    @patch("src.tables.prod_callbacks.ctx")
+    def test_confirming_stock_publishes_revision_after_success(
+        self, mock_ctx, test_db
+    ):
+        upload_values(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode": 123,
+                        "name": "Beer",
+                        "price": 5.0,
+                        "category": "Beverage",
+                        "current_stock": 10,
+                        "initial_stock": 20,
+                    }
+                ]
+            ),
+            "prods",
+        )
+        mock_ctx.triggered_id = "confirm_new_stock"
+
+        result = open_stock(0, 1, [5], [])
+
+        assert result[0] is False
+        assert isinstance(result[1], str) and result[1]
+        assert result[2] is no_update
+        assert test_db._product_table.get().iloc[0]["current_stock"] == 5
+
+    @patch("src.tables.prod_callbacks.ctx")
+    def test_failed_stock_confirmation_keeps_modal_and_revision(
+        self, mock_ctx, test_db
+    ):
+        upload_values(
+            pd.DataFrame(
+                [
+                    {
+                        "barcode": 123,
+                        "name": "Beer",
+                        "price": 5.0,
+                        "category": "Beverage",
+                        "current_stock": 10,
+                        "initial_stock": 20,
+                    }
+                ]
+            ),
+            "prods",
+        )
+        mock_ctx.triggered_id = "confirm_new_stock"
+
+        result = open_stock(0, 1, [None], [])
+
+        assert result[0] is no_update
+        assert result[1] is no_update
+        assert result[2][0]["src"] == "open_stock"
 
     def test_confirm_new_stock_updates_current_stock(self, test_db):
         # Arrange

@@ -13,6 +13,7 @@ import pandas as pd
 from dash import no_update
 
 from src import main_layout, main_page_callbacks
+from src.analytics.TopUserChartData import TopUserChartData
 from src.analytics.product_calculations import get_waste_table
 from src.analytics.trans_calculations import get_income, get_revenue
 from src.database.data_connection import Database, get_last_stock_update_at, update_values
@@ -64,6 +65,17 @@ def settings_upload(monkeypatch, tmp_path):
         )
 
     return upload
+
+
+@pytest.fixture
+def dash_dependencies(temp_db, monkeypatch):
+    Container.set(TopUserChartData, TopUserChartData())
+    app = main_layout.app
+    monkeypatch.setattr(app, "_layout", main_layout.layout_func)
+    monkeypatch.setattr(app, "_layout_is_function", True)
+    response = app.server.test_client().get("/_dash-dependencies")
+    assert response.status_code == 200
+    return response.get_json()
 
 
 def _find_component(component, component_id):
@@ -367,7 +379,7 @@ def test_remove_transaction_button_requires_selection(monkeypatch, temp_db):
 
     # Act
     result = main_page_callbacks.control_transaction_removal(
-        1, None, None, [], [], None, None, []
+        1, None, None, [], [], None, []
     )
 
     # Assert
@@ -389,7 +401,7 @@ def test_remove_transaction_confirmation_shows_transaction_details(
 
     # Act
     result = main_page_callbacks.control_transaction_removal(
-        1, None, None, [transaction], [0], None, None, []
+        1, None, None, [transaction], [0], None, []
     )
 
     # Assert
@@ -418,7 +430,7 @@ def test_cancel_transaction_removal_changes_nothing(
 
     # Act
     result = main_page_callbacks.control_transaction_removal(
-        None, 1, None, None, None, before[0], 2, []
+        None, 1, None, None, None, before[0], []
     )
 
     # Assert
@@ -449,11 +461,13 @@ def test_confirm_transaction_removal_deletes_one_match_backs_up_and_blocks_expor
 
     # Act
     result = main_page_callbacks.control_transaction_removal(
-        None, None, 1, None, None, duplicate, 4, []
+        None, None, 1, None, None, duplicate, []
     )
 
     # Assert
-    assert result == (False, no_update, None, 5, no_update)
+    assert result[:3] == (False, no_update, None)
+    assert isinstance(result[3], str) and result[3]
+    assert result[4] is no_update
     assert temp_db.transactions.to_dict(orient="records") == [duplicate]
     assert temp_db.prods.iloc[0].to_dict() == stock_before
     assert get_last_stock_update_at() == ""
@@ -499,7 +513,7 @@ def test_confirm_missing_transaction_reports_error_without_changing_anything(
 
     # Act
     result = main_page_callbacks.control_transaction_removal(
-        None, None, 1, None, None, missing, 9, []
+        None, None, 1, None, None, missing, []
     )
 
     # Assert
@@ -564,24 +578,156 @@ def test_removing_final_transaction_refreshes_live_calculations(
     assert get_waste_table()[0]["Waste"] == 2
 
 
-@pytest.mark.parametrize("revision", ["transaction_removal_revision", "form_save_revision"])
-def test_success_revision_refreshes_settings_layouts(
-    monkeypatch, temp_db, revision
-):
-    # Arrange
-    marker = object()
-    monkeypatch.setattr(main_layout.time, "sleep", lambda _: None)
-    monkeypatch.setattr(main_layout, "user_settings_layout", lambda: marker)
-    monkeypatch.setattr(main_layout, "product_settings_layout", lambda: marker)
-    monkeypatch.setattr(main_layout, "transaction_settings_layout", lambda: marker)
+def test_closing_settings_refreshes_overview_after_admin_changes(monkeypatch, temp_db):
+    _load_transaction_data(temp_db)
+    monkeypatch.setattr(
+        main_page_callbacks, "ctx", types.SimpleNamespace(triggered_id="settings_modal")
+    )
+    before = main_page_callbacks.update_overview_graph(False, "team", False, False)
+    users = temp_db._user_table.get()
+    users.loc[:, "team"] = "B"
+    temp_db.upload_values_raises(users, "users")
 
-    # Act
-    result = main_layout.update_settings_layout(
-        None, None, None, None, None, **{revision: 1}
+    after = main_page_callbacks.update_overview_graph(False, "team", False, False)
+
+    assert list(before.data[0].x) == ["A team"]
+    assert list(after.data[0].x) == ["B team"]
+
+
+@pytest.mark.parametrize(
+    "trigger,trans_open,settings_open",
+    [
+        ("settings_modal", False, True),
+        ("new_trans_modal", True, False),
+        ("graph_selection", False, True),
+        (None, False, False),
+    ],
+)
+def test_overview_skips_computation_while_hidden_or_initializing(
+    monkeypatch, trigger, trans_open, settings_open
+):
+    monkeypatch.setattr(
+        main_page_callbacks, "ctx", types.SimpleNamespace(triggered_id=trigger)
+    )
+    create_overview = Mock()
+    monkeypatch.setattr(main_page_callbacks, "create_overview", create_overview)
+
+    result = main_page_callbacks.update_overview_graph(
+        trans_open, "team", False, settings_open
     )
 
-    # Assert
-    assert result == (marker, marker, marker)
+    assert result is no_update
+    create_overview.assert_not_called()
+
+
+def test_overview_refreshes_on_modal_events_without_admin_revisions(dash_dependencies):
+    callback = next(
+        callback for callback in dash_dependencies
+        if callback["output"] == "overview_graph.figure"
+    )
+    input_ids = {item["id"] for item in callback["inputs"]}
+
+    assert {"settings_modal", "new_trans_modal"} <= input_ids
+    assert input_ids.isdisjoint(
+        {"admin_data_revision"}
+    )
+
+
+@pytest.mark.parametrize("table_id", ["user_table", "prod_table"])
+def test_settings_tables_have_one_refresh_callback(dash_dependencies, table_id):
+    writers = [
+        callback for callback in dash_dependencies
+        if f"{table_id}.data" in callback["output"]
+    ]
+
+    assert len(writers) == 1
+    assert {"id": "admin_data_revision", "property": "data"} in writers[0]["inputs"]
+    assert {"id": "settings_modal", "property": "is_open"} in writers[0]["inputs"]
+
+
+def test_admin_writes_share_one_revision_without_triggering_checkout(dash_dependencies):
+    layout = main_layout.layout_func()
+    assert _find_component(layout, "admin_data_revision") is not None
+    for old_store in ("update_settings", "settings_data_revision", "transaction_removal_revision"):
+        assert _find_component(layout, old_store) is None
+
+    writers = [
+        callback for callback in dash_dependencies
+        if "admin_data_revision.data" in callback["output"]
+    ]
+    triggers = {item["id"] for callback in writers for item in callback["inputs"]}
+    assert {
+        "confirm_user", "confirm_prod", "edit_modal_delete", "confirm_new_stock",
+        "confirm_remove_transaction", "confirm_new_password", "payments_download",
+    } <= triggers
+    assert triggers.isdisjoint({"new_trans_inp", "prod_barcode", "new_trans_modal"})
+    assert all(callback["prevent_initial_call"] for callback in writers)
+    assert len({callback["output"] for callback in writers}) == len(writers)
+
+    readers = [
+        callback for callback in dash_dependencies
+        if {"id": "admin_data_revision", "property": "data"} in callback["inputs"]
+    ]
+    assert len(readers) == 2
+    for reader in readers:
+        assert reader["inputs"] == [
+            {"id": "settings_modal", "property": "is_open"},
+            {"id": "admin_data_revision", "property": "data"},
+        ]
+
+
+def test_success_revision_refreshes_settings_data(temp_db):
+    temp_db.upload_values(
+        [
+            {"barcode": 1000, "name": "Alice", "rank": "Member", "team": "A"}
+        ],
+        "users",
+    )
+    temp_db.upload_values(
+        [
+            {
+                "barcode": 123,
+                "name": "Beer",
+                "price": 2.5,
+                "category": "Beverage",
+                "current_stock": 7,
+                "initial_stock": 10,
+            }
+        ],
+        "prods",
+    )
+
+    assert main_layout.update_settings_layout(False, None) == (no_update,) * 13
+
+    result = main_layout.update_settings_layout(False, "revision")
+
+    assert result[0][0]["name"] == "Alice"
+    assert result[3][0]["current_stock"] == "7"
+    assert result[6] == get_waste_table()
+
+
+def test_opening_stock_modal_rebuilds_inputs_for_current_products(temp_db):
+    temp_db.upload_values(
+        [
+            {
+                "barcode": 123,
+                "name": "Beer",
+                "price": 2.5,
+                "category": "Beverage",
+                "current_stock": 7,
+                "initial_stock": 10,
+            }
+        ],
+        "prods",
+    )
+
+    children = main_layout.refresh_stock_inputs(True)
+    stock_input = _find_component(
+        children[1],
+        {"type": "new_stock_inp", "index": "Beer"},
+    )
+
+    assert stock_input.value == "7"
 
 
 @pytest.mark.parametrize("filename", ["users.csv", "USERS.CSV"])
@@ -1005,6 +1151,52 @@ def test_failed_import_rolls_back_changes_but_keeps_pre_import_backup(
     assert retry[2] is False
     assert retry[5] is no_update
     assert temp_db.users.iloc[0]["name"] == "Corrected User"
+
+
+def test_rejected_import_opens_bad_rows_without_success_revision(
+    settings_upload, dash_dependencies
+):
+    result = settings_upload(_users_csv(_user_row(999, "Bad User")))
+
+    callback = next(
+        callback for callback in dash_dependencies
+        if "bad_rows_modal.is_open" in callback["output"]
+    )
+    assert {
+        "id": '{"index":["ALL"],"type":"bad_rows"}', "property": "data"
+    } in callback["inputs"]
+    assert result[0] is no_update
+    assert result[3][0][0]["barcode"] == 999
+    assert main_page_callbacks.open_bad_rows(result[3]) == (True, result[3])
+
+
+@pytest.mark.parametrize("rows", [[None, None, None], [[], [], []]])
+def test_bad_rows_dialog_ignores_empty_results(rows):
+    assert main_page_callbacks.open_bad_rows(rows) == (
+        no_update, [no_update, no_update, no_update]
+    )
+
+
+def test_study_users_reopening_refreshes_retained_selection(
+    temp_db, dash_dependencies
+):
+    _load_transaction_data(temp_db)
+    selected_users = ["1000"]
+    before = main_page_callbacks.study_users(selected_users, True)
+    assert main_page_callbacks.study_users(selected_users, False) is no_update
+    temp_db._transaction_table.append([
+        {"barcode_user": 1000, "barcode_prod": 101, "timestamp": "26/07/2026 11:00:00"}
+    ])
+
+    after = main_page_callbacks.study_users(selected_users, True)
+
+    callback = next(
+        callback for callback in dash_dependencies
+        if callback["output"] == "study_user_table.figure"
+    )
+    assert {"id": "study_users_modal", "property": "is_open"} in callback["inputs"]
+    assert list(next(trace for trace in before.data if trace.name == "Beer").y) == [1]
+    assert list(next(trace for trace in after.data if trace.name == "Beer").y) == [2]
 
 
 def test_export_barcodes_returns_zip_with_pdfs_and_complete_label_report(temp_db):

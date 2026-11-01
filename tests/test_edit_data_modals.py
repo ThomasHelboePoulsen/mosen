@@ -4,6 +4,7 @@ import sqlite3
 from contextlib import closing
 from unittest.mock import patch
 from dash import no_update
+from src import main_layout
 from src.container import Container
 from src.database.data_connection import Database, add_transactions, upload_values
 from src.main_page_callbacks import edit_new_data_modals, open_edit_modal
@@ -80,10 +81,12 @@ def test_create_after_cancelled_edit_preserves_original_accounting(populated_edi
         values[1:4] = ["New user", "Member", "B"]
     else:
         values[1:] = ["New product", 12.5, "Drink", 30]
-    rows, edit_value, is_open, revision, errors = callbacks.add_row_callback(1, values, edit_barcode, [])
+    edit_value, is_open, revision, errors = callbacks.add_row_callback(1, values, edit_barcode, [])
 
+    refreshed = main_layout.update_settings_layout(True, admin_data_revision=revision)
+    rows = refreshed[0 if kind == "user" else 3]
     assert len(rows) == 2
-    assert rows == db.get_table(table).get().to_dict(orient="records")
+    assert rows == db.get_table(table).get_untyped().to_dict(orient="records")
     assert edit_value is None
     assert is_open is False
     assert isinstance(revision, str)
@@ -107,7 +110,7 @@ def test_save_without_click_preserves_form_state(callbacks, n_clicks):
         result = callbacks.add_row_callback(n_clicks, [], 1500, [])
 
     save.assert_not_called()
-    assert result == (no_update,) * 5
+    assert result == (no_update,) * 4
 
 
 def test_failed_edit_retains_context_for_barcode_change_retry(populated_edit_form):
@@ -120,9 +123,8 @@ def test_failed_edit_retains_context_for_barcode_change_retry(populated_edit_for
     values[0] = barcode + 1
     values[1] = None
 
-    rows, edit_value, is_open, revision, errors = callbacks.add_row_callback(1, values, barcode, [])
+    edit_value, is_open, revision, errors = callbacks.add_row_callback(1, values, barcode, [])
 
-    assert rows is no_update
     assert edit_value is no_update
     assert is_open is no_update
     assert revision is no_update
@@ -130,7 +132,7 @@ def test_failed_edit_retains_context_for_barcode_change_retry(populated_edit_for
     pd.testing.assert_frame_equal(db.get_table(table).get(), before)
     pd.testing.assert_frame_equal(db._transaction_table.get(), transactions_before)
     values[1] = "Corrected name"
-    rows, edit_value, is_open, revision, errors = callbacks.add_row_callback(2, values, barcode, [])
+    edit_value, is_open, revision, errors = callbacks.add_row_callback(2, values, barcode, [])
     assert edit_value is None
     assert is_open is False
     assert isinstance(revision, str)
@@ -141,6 +143,8 @@ def test_failed_edit_retains_context_for_barcode_change_retry(populated_edit_for
     assert db._transaction_table.get().iloc[0][reference] == barcode + 1
     preserved = ["paid_cents", "waste_cents", "is_guest"] if kind == "user" else ["current_stock", "initial_stock"]
     assert row[preserved].tolist() == before.iloc[0][preserved].tolist()
+    refreshed = main_layout.update_settings_layout(True, admin_data_revision=revision)
+    assert refreshed[0 if kind == "user" else 3][0]["barcode"] == str(barcode + 1)
 
 
 class TestDeleteUserByBarcode:
@@ -161,16 +165,15 @@ class TestDeleteUserByBarcode:
         result = edit_new_data_modals(1, None, None, "users", 1500, [])
 
         # Assert
-        assert result[:6] == (
+        assert result[:5] == (
             no_update,
             no_update,
             [no_update] * 6,
             [no_update] * PRODUCT_FORM_FIELD_COUNT,
             no_update,
-            no_update,
         )
-        assert len(result[6]) == 1
-        assert "Cannot remove users with recorded early payments" in result[6][0]["msg"]
+        assert len(result[5]) == 1
+        assert "Cannot remove users with recorded early payments" in result[5][0]["msg"]
         pd.testing.assert_frame_equal(temp_db._user_table.get(), users_before)
         with closing(sqlite3.connect(temp_db.data_file)) as connection:
             assert connection.execute("SELECT * FROM users").fetchall() == stored_before
@@ -192,15 +195,17 @@ class TestDeleteUserByBarcode:
 
         # Assert
         pd.testing.assert_frame_equal(temp_db._user_table.get(), expected_users)
-        assert result[4] == expected_users.to_dict(orient="records")
-        assert result[6] is no_update
+        assert isinstance(result[4], str)
+        assert result[5] is no_update
+        refreshed = main_layout.update_settings_layout(True, admin_data_revision=result[4])
+        assert [row["barcode"] for row in refreshed[0]] == ["1600"]
         with closing(sqlite3.connect(temp_db.data_file)) as connection:
             assert connection.execute(
                 "SELECT barcode, paid_cents FROM users"
             ).fetchall() == [(1600, 5000)]
 
     @patch("src.main_page_callbacks.ctx")
-    def test_deletes_user_and_returns_empty_table(self, mock_ctx, temp_db, test_user_data):
+    def test_deletes_user_and_refreshes_empty_table(self, mock_ctx, temp_db, test_user_data):
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_delete"
@@ -217,14 +222,16 @@ class TestDeleteUserByBarcode:
         assert result[1] is no_update
         assert result[2] == [no_update] * user_col_count
         assert result[3] == [no_update] * prod_col_count
-        assert len(result[4]) == 0
+        assert isinstance(result[4], str)
         assert result[5] is no_update
+        refreshed = main_layout.update_settings_layout(True, admin_data_revision=result[4])
+        assert refreshed[0] == []
 
 
 class TestDeleteProductByBarcode:
 
     @patch("src.main_page_callbacks.ctx")
-    def test_deletes_product_and_returns_empty_table(self, mock_ctx, temp_db, test_product_data):
+    def test_deletes_product_and_refreshes_empty_table(self, mock_ctx, temp_db, test_product_data):
         # Arrange
         upload_values(test_product_data, "prods")
         mock_ctx.triggered_id = "edit_modal_delete"
@@ -241,14 +248,16 @@ class TestDeleteProductByBarcode:
         assert result[1] is no_update
         assert result[2] == [no_update] * user_col_count
         assert result[3] == [no_update] * prod_col_count
-        assert result[4] is no_update
-        assert len(result[5]) == 0
+        assert isinstance(result[4], str)
+        assert result[5] is no_update
+        refreshed = main_layout.update_settings_layout(True, admin_data_revision=result[4])
+        assert refreshed[3] == []
 
 
 class TestDeleteWithInvalidBarcode:
 
     @patch("src.main_page_callbacks.ctx")
-    def test_returns_unchanged_table_when_barcode_not_found(self, mock_ctx, temp_db, test_user_data):
+    def test_preserves_data_without_revision_when_barcode_not_found(self, mock_ctx, temp_db, test_user_data):
         # Arrange
         upload_values(test_user_data, "users")
         mock_ctx.triggered_id = "edit_modal_delete"
@@ -260,7 +269,8 @@ class TestDeleteWithInvalidBarcode:
         remaining_users = temp_db._user_table.get()
         assert len(remaining_users) == 1
         assert remaining_users.iloc[0]["barcode"] == 1500
-        assert len(result[4]) == 1
+        assert result[4] is no_update
+        assert result[5] is no_update
 
 
 class TestDeleteWithTransactions:
@@ -292,15 +302,14 @@ class TestDeleteWithTransactions:
         users = temp_db._user_table.get()
         assert len(users) == 1
         assert users.iloc[0]["barcode"] == 1500
-        assert result[:6] == (
+        assert result[:5] == (
             no_update,
             no_update,
             [no_update] * 6,
             [no_update] * PRODUCT_FORM_FIELD_COUNT,
             no_update,
-            no_update,
         )
-        assert "Cannot remove users with transactions" in result[6][0]["msg"]
+        assert "Cannot remove users with transactions" in result[5][0]["msg"]
 
     @patch("src.main_page_callbacks.ctx")
     def test_cannot_delete_product_with_transactions(
@@ -329,15 +338,14 @@ class TestDeleteWithTransactions:
         prods = temp_db._product_table.get()
         assert len(prods) == 1
         assert prods.iloc[0]["barcode"] == 101
-        assert result[:6] == (
+        assert result[:5] == (
             no_update,
             no_update,
             [no_update] * 6,
             [no_update] * PRODUCT_FORM_FIELD_COUNT,
             no_update,
-            no_update,
         )
-        assert "Cannot delete product 101" in result[6][0]["msg"]
+        assert "Cannot delete product 101" in result[5][0]["msg"]
 
 
 class TestEditBranch:
@@ -374,8 +382,8 @@ class TestEditBranch:
         assert result[2][4] == []  # is_guest checkbox (empty list = unchecked)
         assert result[2][5] == 0  # paid amount
         assert result[3] == [no_update] * prod_col_count
-        assert result[4] is no_update  # user_table data
-        assert result[5] is no_update  # prod_table data
+        assert result[4] is no_update  # revision
+        assert result[5] is no_update  # errors
 
     @patch("src.main_page_callbacks.ctx")
     def test_enter_key_populates_user_form(self, mock_ctx, temp_db, test_user_data):
@@ -456,8 +464,8 @@ class TestEditBranch:
         assert result[3][2] == 5.0  # price (untyped)
         assert result[3][3] == "Beverage"  # category
         assert result[3][4] == 20  # initial_stock (untyped)
-        assert result[4] is no_update  # user_table data
-        assert result[5] is no_update  # prod_table data
+        assert result[4] is no_update  # revision
+        assert result[5] is no_update  # errors
 
 
 class TestEdgeCases:
@@ -567,4 +575,4 @@ class TestUploadFailureHandling:
         assert call_tracker["called"]
         assert len(call_tracker["data"]) == 0
         assert call_tracker["table"] == "users"
-        assert len(result) == 7
+        assert len(result) == 6

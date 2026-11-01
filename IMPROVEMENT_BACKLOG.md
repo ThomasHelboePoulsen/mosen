@@ -38,7 +38,7 @@ Code locations below use file paths and function names. Function names are the p
 | 06 | ~~Preserve the visible basket after failed checkout~~ | Small to medium | **Done** |
 | 07 | ~~Clear stale edit state on Create and Cancel~~ | Small to medium | **Done** |
 | 08 | ~~Validate numeric values before table replacement~~ | Medium | **Done** |
-| 09 | Refresh settings after successful changes | Medium | Confirmed callback/design issue |
+| 09 | ~~Refresh settings after successful changes~~ | Medium | **Done** |
 | 10 | Make backups consistent without holding up buying | Medium | Confirmed unsafe copy; implementation proposal |
 | 12 | Show the current basket's price and item count | Small to medium | Optional usability idea |
 | 17 | Validate transaction references once per batch | Medium | Deferred admin performance work |
@@ -64,7 +64,7 @@ Code locations below use file paths and function names. Function names are the p
 
 ## 09. Refresh settings after successful changes
 
-**Status:** Open. **Evidence:** A passive tab event requests a one-second sleep and rebuilds all three data tabs, including their nested modals.
+**Status:** Done. **Evidence:** A passive tab event requested a one-second sleep and rebuilt all three data tabs, including their nested modals.
 
 **Issue:** Settings refresh can close/reset forms and can read data before the operation that triggered it has completed.
 
@@ -79,6 +79,8 @@ Code locations below use file paths and function names. Function names are the p
 **Where:** `src/main_layout.py`: `update_settings_layout()`, the settings layout builders; mutation callbacks in `src/main_page_callbacks.py` and `src/tables/`; existing `transaction_removal_revision` demonstrates part of the approach.
 
 **Acceptance:** Switching tabs does not close or clear forms. Successful writes update all affected views; failed writes preserve input. Reopening settings after purchases shows current data. Stock saves do not replay product creation. Verify the interaction in a browser as well as focused callback tests. Relevant tests: `tests/test_main_page_callbacks.py`, `tests/test_edit_data_modals.py`, `tests/test_user_callbacks.py`, `tests/test_prod_callbacks.py`, `tests/test_waste_allocation.py`.
+
+**Completed:** Settings tabs now remain mounted while targeted callbacks refresh table data, tooltips, income rows, economy summaries, stock values, and study-user choices. Successful admin changes publish a shared `admin_data_revision` only after commit; payment exports and stock updates also publish that revision, and failed stock saves keep the modal open. The main overview refreshes when settings closes. Removed the one-second delay and whole-tab replacement. Covered by focused callback tests.
 
 ## 10. Make backups consistent without holding up buying
 

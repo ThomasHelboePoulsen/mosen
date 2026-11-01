@@ -55,6 +55,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import uuid4
 
 
 BACKUP_DIR = "swamp_backups"
@@ -219,14 +220,13 @@ def disable_remove_transaction_button(selected_rows):
     Output("remove_transaction_modal", "is_open"),
     Output("remove_transaction_summary", "children"),
     Output("pending_transaction_removal", "data"),
-    Output("transaction_removal_revision", "data"),
+    Output("admin_data_revision", "data", allow_duplicate=True),
     Input("remove_transaction_btn", "n_clicks"),
     Input("cancel_remove_transaction", "n_clicks"),
     Input("confirm_remove_transaction", "n_clicks"),
     State("trans_table", "derived_virtual_data"),
     State("trans_table", "derived_virtual_selected_rows"),
     State("pending_transaction_removal", "data"),
-    State("transaction_removal_revision", "data"),
 )
 def control_transaction_removal(
     remove_clicks,
@@ -235,7 +235,6 @@ def control_transaction_removal(
     virtual_data,
     selected_rows,
     pending_transaction,
-    revision,
 ):
     trigger = ctx.triggered_id
     if trigger == "remove_transaction_btn" and remove_clicks:
@@ -250,7 +249,7 @@ def control_transaction_removal(
         return False, no_update, None, no_update
     if trigger == "confirm_remove_transaction" and confirm_clicks:
         remove_transaction(pending_transaction)
-        return False, no_update, None, (revision or 0) + 1
+        return False, no_update, None, uuid4().hex
     return no_update, no_update, no_update, no_update
 
 
@@ -259,9 +258,10 @@ def control_transaction_removal(
     Input("new_trans_modal", "is_open"),
     Input("graph_selection", "value"),
     Input("graph_average", "value"),
+    Input("settings_modal", "is_open"),
 )
-def update_overview_graph(trans_modal_open, graph_col, average):
-    if not (ctx.triggered_id is not None and trans_modal_open == False):
+def update_overview_graph(trans_modal_open, graph_col, average, settings_open):
+    if ctx.triggered_id is None or trans_modal_open is not False or settings_open:
         return no_update
 
     return create_overview(graph_col, average)
@@ -388,7 +388,7 @@ def _validate_optional_user_values(
 
 
 @callback_with_error_queue(5,
-    Output("update_settings", "data"),
+    Output("admin_data_revision", "data", allow_duplicate=True),
     Output("bad_password_alert", "is_open"),
     Output("bad_data_alert", "is_open"),
     Output({"index": ALL, "type": "bad_rows"}, "data"),
@@ -414,7 +414,7 @@ def update_settings(
     filenames,
 ):
     if (trigger := ctx.triggered_id) is None:
-        return None, no_update, no_update, [no_update] * 3, no_update
+        return no_update, no_update, no_update, [no_update] * 3, no_update
     open_warning_password = False
     if password is None or len(password) == 0:
         open_warning_password = True
@@ -463,7 +463,7 @@ def update_settings(
         bill_preview_waste_extra_percent=bill_preview_waste_extra_percent,
     )
     if trigger == "confirm_new_password":
-        return None, no_update, no_update, [no_update] * 3, True
+        return uuid4().hex, no_update, no_update, [no_update] * 3, True
 
     bad_rows_list = [[], [], []]
     open_warning_data = False
@@ -472,7 +472,11 @@ def update_settings(
         bad_rows_list[i] = bad_rows
         if not success:
             open_warning_data = True
-    return TransactionResult((True, open_warning_password, open_warning_data, bad_rows_list, False), commit=not open_warning_data)
+    revision = uuid4().hex if not open_warning_data else no_update
+    return TransactionResult(
+        (revision, open_warning_password, open_warning_data, bad_rows_list, False),
+        commit=not open_warning_data,
+    )
 
 
 @callback(
@@ -618,18 +622,12 @@ def export_barcodes(trigger):
 @callback(
     Output("bad_rows_modal", "is_open"),
     Output({"index": ALL, "type": "bad_rows_table"}, "data"),
-    Input("update_settings", "data"),
-    State({"index": ALL, "type": "bad_rows"}, "data"),
+    Input({"index": ALL, "type": "bad_rows"}, "data"),
 )
-def open_bad_rows(trigger, data):
-    if (
-        trigger is None
-        or max([0 if table is None else len(table) for table in data]) == 0
-    ):
+def open_bad_rows(data):
+    if not any(data):
         return no_update, [no_update, no_update, no_update]
-    else:
-        print(data)
-        return True, data
+    return True, data
 
 
 @callback(
@@ -659,13 +657,12 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit, submit_edit)
     return no_update, no_update, no_update
 
 
-@callback_with_error_queue(6,
+@callback_with_error_queue(5,
     Output("new_user_modal", "is_open", allow_duplicate=True),
     Output("new_prod_modal", "is_open", allow_duplicate=True),
     Output({"index": ALL, "type": "user_input"}, "value", allow_duplicate=True),
     Output({"index": ALL, "type": "prod_input"}, "value", allow_duplicate=True),
-    Output("user_table", "data", allow_duplicate=True),
-    Output("prod_table", "data", allow_duplicate=True),
+    Output("admin_data_revision", "data", allow_duplicate=True),
     Input("edit_modal_delete", "n_clicks"),
     Input("edit_modal_edit", "n_clicks"),
     Input("edit_input", "n_submit"),
@@ -679,7 +676,6 @@ def open_edit_modal(open_user, open_prod, close_delete, close_edit, submit_edit)
         no_update,
         [no_update] * 6,
         [no_update] * 5,
-        no_update,
         no_update,
     )
 )
@@ -695,45 +691,34 @@ def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
         transactions = db._transaction_table.get()
         if table == "users":
             data = user_table.get()
-            other_table_data = no_update
             _validate_user_removals(
                 data[data["barcode"] == int(barcode)],
                 transactions,
             )
         elif table == "prods":
             data = prod_table.get()
-            other_table_data = no_update
             in_use = transactions["barcode_prod"].astype(str).eq(str(barcode)).any()
             if in_use:
                 raise ValueError(
                     f"Cannot delete product {barcode} because it has transactions."
                 )
         barcode_mask = data["barcode"] == int(barcode)
+        changed = barcode_mask.any()
         data = data[~barcode_mask].copy()
         db.upload_values_raises(data, table)
-        if table == "users":
-            return (
-                no_update,
-                no_update,
-                [no_update] * user_col_count,
-                [no_update] * prod_col_count,
-                data.to_dict(orient="records"),
-                other_table_data,
-            )
         return (
             no_update,
             no_update,
             [no_update] * user_col_count,
             [no_update] * prod_col_count,
-            other_table_data,
-            data.to_dict(orient="records"),
+            uuid4().hex if changed else no_update,
         )
     elif trigger in ["edit_modal_edit", "edit_input"] and barcode is not None:
         if table == "users":
             data = user_table.get()
             row = data[data["barcode"] == int(barcode)]
             if len(row) == 0:
-                return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
+                return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update
             row_dict = row.iloc[0].to_dict()
             is_guest = int(str(row_dict.get("is_guest", 0))) == 1
             paid = int(row_dict.get("paid_cents", 0)) / 100
@@ -745,12 +730,12 @@ def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
                 [1] if is_guest else [],
                 paid,
             ]
-            return True, no_update, row_list, [no_update] * prod_col_count, no_update, no_update
+            return True, no_update, row_list, [no_update] * prod_col_count, no_update
         if table == "prods":
             data = prod_table.get()
             row = data[data["barcode"] == int(barcode)]
             if len(row) == 0:
-                return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
+                return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update
             row_dict = row.iloc[0].to_dict()
             row = [
                 row_dict["barcode"],
@@ -759,9 +744,9 @@ def edit_new_data_modals(delete, edit, submit_edit, table, barcode):
                 row_dict["category"],
                 row_dict["initial_stock"],
             ]
-            return no_update, True, [no_update] * user_col_count, row, no_update, no_update
+            return no_update, True, [no_update] * user_col_count, row, no_update
     else:
-        return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update, no_update
+        return no_update, no_update, [no_update] * user_col_count, [no_update] * prod_col_count, no_update
 
 
 @callback_with_error_queue(1,
@@ -793,6 +778,17 @@ def backup_database(trigger, interval):
         db = Container.get(Database)
         return create_database_backup(db.data_file, label="backup")
     return no_update
+
+
+@callback(
+    Output("admin_data_revision", "data", allow_duplicate=True),
+    Input("payments_download", "data"),
+    prevent_initial_call=True,
+)
+def refresh_after_payment_export(download):
+    if download is None or download is no_update:
+        return no_update
+    return uuid4().hex
 
 
 @callback(
@@ -849,9 +845,13 @@ def open_study_users(trigger):
     return no_update
 
 
-@callback(Output("study_user_table", "figure"), Input("study_users_dd", "value"))
-def study_users(users):
-    if users is None or len(users) < 1:
+@callback(
+    Output("study_user_table", "figure"),
+    Input("study_users_dd", "value"),
+    Input("study_users_modal", "is_open"),
+)
+def study_users(users, is_open):
+    if not is_open or users is None or len(users) < 1:
         return no_update
 
     prods = get_prods()
