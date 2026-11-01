@@ -39,66 +39,11 @@ Code locations below use file paths and function names. Function names are the p
 | 07 | ~~Clear stale edit state on Create and Cancel~~ | Small to medium | **Done** |
 | 08 | ~~Validate numeric values before table replacement~~ | Medium | **Done** |
 | 09 | ~~Refresh settings after successful changes~~ | Medium | **Done** |
-| 10 | Make backups consistent without holding up buying | Medium | Confirmed unsafe copy; implementation proposal |
+| 10 | ~~Make backups consistent without holding up buying~~ | Medium | **Done** |
 | 12 | Show the current basket's price and item count | Small to medium | Optional usability idea |
 | 17 | Validate transaction references once per batch | Medium | Deferred admin performance work |
 
 
-## 08. Validate numeric values before table replacement
-
-**Status:** Done. **Evidence:** A quoted CSV price of `"12,50"` committed successfully, then typed product reads raised a conversion error.
-
-**Issue:** Import validation can accept values that the application cannot subsequently read using its declared column types.
-
-**Why it matters:** One bad numeric cell can leave checkout, product editing or stock handling failing until the data is repaired.
-
-**Cause:** `BaseTable.is_valid_batch()` checks required fields, columns, duplicate primary keys and barcode validity, but not ordinary numeric types. `get()` performs conversion later, after replacement has committed.
-
-**Proposed change:** Validate declared numeric conversions before any replacement/insertion. Reject non-finite numbers and fractional values for integer columns; fill optional defaults before checking them. Return useful bad rows and preserve the previous table on failure. Reject unsupported decimal formats clearly rather than silently guessing a locale. Respect valid sentinels such as `waste_cents=-1` and legitimately negative current stock; do not add unrelated domain restrictions.
-
-**Where:** `src/database/tables/base_table.py`: `is_valid_batch()`, `set()`, `append()`, `get()`; `src/database/tables/column.py`; product/user column definitions.
-
-**Acceptance:** Malformed numbers, infinity and fractional integer fields fail before writes; typed reads continue working. Valid numeric inputs, optional defaults and existing sentinel values still round-trip. Check both replacement and append. Relevant tests: `tests/test_column_system.py`, `tests/test_product_table.py`, `tests/test_product_table_properties.py`, `tests/test_main_page_callbacks.py`, transaction/atomicity tests affected by shared validation.
-
-**Completed:** Added declared-type numeric validation to shared batch validation, including finite float checks and whole-value integer checks. Replacement and append now reject malformed numeric values before writing, while valid defaults and sentinels remain supported. Verified with focused column-system tests.
-
-## 09. Refresh settings after successful changes
-
-**Status:** Done. **Evidence:** A passive tab event requested a one-second sleep and rebuilt all three data tabs, including their nested modals.
-
-**Issue:** Settings refresh can close/reset forms and can read data before the operation that triggered it has completed.
-
-**Why it matters:** Typed input may disappear, failed saves become hard to correct, and tables can display stale values. The arbitrary delay also makes admin interactions slower.
-
-**Cause:** `update_settings_layout()` listens to button clicks and passive UI events, guesses that writes finish within one second, then replaces whole tab children. Forms, modals and state stores are nested in those children.
-
-**Proposed change:** Keep forms, action controls, search input and modals mounted. Emit unique change revisions from successful mutation callbacks, with the response returned after commit. Use those revisions to refresh table data/tooltips, income backing rows, waste figures and a small economy-summary container. Refresh on settings opening to capture purchases since the previous visit. Populate stock rows and study-user choices when their dialogs open. Remove the sleep and whole-tab replacement.
-
-**Dependencies and cautions:** Revalidate items 02, 06 and 07 after this change. Item 07 added `form_save_revision` for successful user/product saves and removed the unrelated `confirm_new_stock` trigger from product saving; extend that success-driven approach to the remaining mutations. `update_settings.data=True` currently also occurs after invalid imports roll back, so it is not a reliable success signal. Payment export can commit while displaying a warning; such committed changes still need refresh. Failed saves should preserve the open form and its input. Handle tables that were initially empty as well as table columns and tooltips.
-
-**Where:** `src/main_layout.py`: `update_settings_layout()`, the settings layout builders; mutation callbacks in `src/main_page_callbacks.py` and `src/tables/`; existing `transaction_removal_revision` demonstrates part of the approach.
-
-**Acceptance:** Switching tabs does not close or clear forms. Successful writes update all affected views; failed writes preserve input. Reopening settings after purchases shows current data. Stock saves do not replay product creation. Verify the interaction in a browser as well as focused callback tests. Relevant tests: `tests/test_main_page_callbacks.py`, `tests/test_edit_data_modals.py`, `tests/test_user_callbacks.py`, `tests/test_prod_callbacks.py`, `tests/test_waste_allocation.py`.
-
-**Completed:** Settings tabs now remain mounted while targeted callbacks refresh table data, tooltips, income rows, economy summaries, stock values, and study-user choices. Successful admin changes publish a shared `admin_data_revision` only after commit; payment exports and stock updates also publish that revision, and failed stock saves keep the modal open. The main overview refreshes when settings closes. Removed the one-second delay and whole-tab replacement. Covered by focused callback tests.
-
-## 10. Make backups consistent without holding up buying
-
-**Status:** Open. **Evidence:** Copying an isolated SQLite database during a write captured a mixture containing changes that were subsequently rolled back.
-
-**Issue:** Periodic backups copy the live database file without coordinating with writes, so a backup may not represent a valid committed trip state.
-
-**Why it matters:** Recovery files must be trustworthy, while background backup work should avoid noticeable scan/checkout delays.
-
-**Cause:** `create_database_backup()` uses `shutil.copy()`. The periodic callback does not participate in the database lock. A global lock around the entire copy would serialize it safely within this app, but a purchase arriving during the copy would wait.
-
-**Proposed change:** Put a native SQLite backup helper in the existing database/connection layer. Periodic backups should use a fresh dedicated source connection and incremental backup, with a separate backup mutex preventing overlap. Avoid holding the app-wide lock through the entire periodic backup. Publish the filename only after successful completion and clean up incomplete output on failure. Pre-import and pre-deletion snapshots should remain blocking under the existing transaction lock and complete before the first write.
-
-**Cautions:** Do not use `Connection.connect()` to obtain the backup source inside a transaction: it may return the active write connection. Backing up a source connection with its own uncommitted write can self-block. Short SQLite read locks still occur; do not promise zero latency. Use no new dependency. See the [SQLite online backup documentation](https://www.sqlite.org/backup.html).
-
-**Where:** `src/main_page_callbacks.py`: `create_database_backup()`, `backup_database()`, pre-import and transaction-removal call sites; `src/database/data_connection.py`; `src/database/connection.py`.
-
-**Acceptance:** Concurrent purchases and periodic backups produce readable snapshots of committed data, without errors or overlap. A failed backup is not advertised as complete. A required pre-action backup failure prevents that action. Existing pre-import/deletion snapshot tests still pass. Measure purchase latency with backups active on realistic data; the review's 176 KB database took roughly 6-8 ms to back up on one machine, not a target-laptop guarantee.
 
 ## 12. Show the current basket's price and item count
 

@@ -1,6 +1,9 @@
 """Pure SQLite connection wrapper. No table knowledge."""
+import os
 import sqlite3
-from threading import RLock
+from contextlib import closing
+from pathlib import Path
+from threading import Lock, RLock
 import pandas as pd
 import uuid
 
@@ -16,6 +19,7 @@ class Connection:
     def __init__(self, data_file: str = "beerbase.db"):
         self.data_file = data_file
         self._lock = RLock()
+        self._backup_lock = Lock()
         self._active_con = None
         self._active_token = None
 
@@ -113,3 +117,26 @@ class Connection:
     def init(self):
         """Get connection (backward compatibility with Database.init())."""
         return self.connect()
+
+    def backup_to(self, destination: str):
+        """Create an atomic backup of the last committed database state.
+
+        The source connection is deliberately separate from the active
+        transaction connection so uncommitted writes are never copied.
+        """
+        temporary_destination = f"{destination}.{uuid.uuid4().hex}.tmp"
+        source_uri = Path(self.data_file).resolve().as_uri() + "?mode=ro"
+        with self._backup_lock:
+            try:
+                with (
+                    closing(sqlite3.connect(source_uri, uri=True, timeout=5)) as source,
+                    closing(sqlite3.connect(temporary_destination, timeout=5)) as target,
+                ):
+                    source.backup(target, pages=100, sleep=0.01)
+                os.replace(temporary_destination, destination)
+            except Exception:
+                try:
+                    os.remove(temporary_destination)
+                except FileNotFoundError:
+                    pass
+                raise

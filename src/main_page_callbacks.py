@@ -49,7 +49,6 @@ from src.diagnostics import (
 import base64
 import binascii
 import io
-import shutil
 import os
 import tempfile
 import zipfile
@@ -130,7 +129,10 @@ def create_database_backup(data_file="beerbase.db", label="backup", backup_dir=N
     db_name = os.path.splitext(os.path.basename(data_file))[0]
     timestamp = datetime.now().strftime("%d_%m_%Y_%H_%M_%S_%f")
     filename = os.path.join(backup_dir, f"{db_name}_{label}_{timestamp}.db")
-    shutil.copy(data_file, filename)
+    db = Container.get(Database)
+    if os.path.abspath(db.data_file) != os.path.abspath(data_file):
+        raise ValueError("Backup source does not match the active database.")
+    db.backup_to(filename)
     return filename
 
 

@@ -158,6 +158,10 @@ class Database:
     @property
     def data_file(self):
         return self._connection.data_file
+
+    def backup_to(self, destination: str):
+        """Create a consistent backup without acquiring the application lock."""
+        self._connection.backup_to(destination)
     
     def refresh_caches(self):
         """Refresh all table caches under DB lock."""
