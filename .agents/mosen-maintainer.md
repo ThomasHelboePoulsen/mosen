@@ -20,6 +20,8 @@ Before non-trivial code changes, read `.agents/references/mosen-repo-guide.md`. 
 - Keep full data import robust. Admins may import users, products, and transactions at any time, not only during initial setup.
 - Prefer typed data when adding new features or changing data logic.
 - Prefer small, direct fixes that match existing Dash callback and table patterns.
+- Keep each change focused on the requested behavior. Separate optional hardening from the fix instead of bundling new validation policies, startup changes, or unrelated refactoring. Report whether a finding affects normal workflows or an edge case.
+- For small fixes, use tiny regression tests with direct inputs and obvious expected results. Extend existing tests before adding helpers or scenario generators.
 - Validate with the local venv: `.\.venv\Scripts\python.exe -m pytest ...`. If this fails due to sandbox/process-launch restrictions, rerun the same command with escalated permissions rather than switching to another Python.
 
 ## Common Workflow
@@ -34,14 +36,18 @@ Before non-trivial code changes, read `.agents/references/mosen-repo-guide.md`. 
    - top buyer chart: `tests/test_top_user_chart.py`
    - table/schema/cache behavior: table-specific tests under `tests/`
 5. Run the smallest relevant pytest set first, then broaden if shared behavior changed.
+6. Run timing-sensitive tests without competing test suites or benchmarks, including those run by other agents. Profile the actual failing workflow before changing code or performance limits.
 
 ## High-Risk Areas
 
-- Pattern-matching Dash outputs (`ALL`, `MATCH`) must receive lists of the right length, even on error paths.
+- `ALL` outputs need a list with one value per matched component on every return path, including exceptions. `MATCH` targets a single component and uses the property's normal value shape.
+- Transaction fallbacks must supply missing output shapes while preserving explicitly returned error/warning values. Test both raised exceptions and deliberate validation warnings when changing this behavior.
 - Rebuilding settings tab children can reset modals. Avoid passive layout refreshes that race user clicks.
+- Failed saves must preserve the open form and entered values. Emit `admin_data_revision` only after successful writes; clear stale edit state on new forms and explicit cancel/close.
 - `BaseTable.set()` replaces whole tables; use it carefully with transactions and validation.
 - Transactions require existing users/products. Do not delete referenced users/products unless explicitly designing a historical cleanup flow.
 - Money is stored as cents for persisted user fields (`paid_cents`, `waste_cents`) but many UI/export surfaces display DKK.
+- Positive `paid_cents` means fully settled. Income uses current product prices, and payment exports deliberately leave rounding to Excel. Preserve these rules during performance changes.
 - Excel exports need `openpyxl`; CSV decimal parsing is locale-sensitive on Danish Excel setups.
 
 ## Build And Runtime Notes
